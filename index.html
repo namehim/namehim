@@ -125,7 +125,9 @@
     const CATEGORIES = Object.keys(CATEGORY_COLORS);
     const routes = {
       '#/browse': 'page-browse',
-      '#/submit': 'page-submit'
+      '#browse': 'page-browse',
+      '#/submit': 'page-submit',
+      '#submit': 'page-submit'
     };
 
     const config = {
@@ -364,13 +366,22 @@
       });
     }
 
+    function normalizeRouteHash(rawHash) {
+      if (!rawHash || rawHash === '#') return '#/browse';
+      const cleaned = rawHash.toLowerCase().replace(/^#!?\/?/, '');
+      if (cleaned === 'submit') return '#/submit';
+      return '#/browse';
+    }
+
     function renderRoute() {
-      const hash = routes[location.hash] ? location.hash : '#/browse';
+      const hash = normalizeRouteHash(location.hash);
       if (location.hash !== hash) {
         location.hash = hash;
       }
-      Object.entries(routes).forEach(([route, id]) => {
-        document.getElementById(id).classList.toggle('hidden', route !== hash);
+
+      const targetSectionId = routes[hash];
+      ['page-browse', 'page-submit'].forEach((id) => {
+        document.getElementById(id).classList.toggle('hidden', id !== targetSectionId);
       });
     }
 
