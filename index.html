@@ -32,8 +32,8 @@
     <div class="max-w-6xl mx-auto px-4 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
       <h1 class="text-2xl font-bold tracking-wide">NameHim</h1>
       <nav class="flex flex-wrap gap-2 text-sm">
-        <a href="index.html#/browse" class="px-3 py-2 rounded bg-muted hover:bg-slate-600 transition">Home</a>
-        <a href="index.html#/submit" class="px-3 py-2 rounded bg-muted hover:bg-slate-600 transition">Submit</a>
+        <a href="#/browse" class="px-3 py-2 rounded bg-muted hover:bg-slate-600 transition">Home</a>
+        <a href="#/submit" class="px-3 py-2 rounded bg-muted hover:bg-slate-600 transition">Submit</a>
         <a href="about.html" class="px-3 py-2 rounded bg-muted hover:bg-slate-600 transition">About</a>
       </nav>
     </div>
@@ -42,6 +42,10 @@
   <main class="max-w-6xl mx-auto w-full px-4 py-6 flex-1">
     <section id="page-browse" class="hidden">
       <h2 class="text-xl font-semibold mb-4">Search / Browse Reports</h2>
+      <div class="mb-4 flex flex-col sm:flex-row gap-2 sm:items-center">
+        <input id="report-search" type="text" placeholder="Filter by name, city, state, or country..." class="w-full sm:max-w-md bg-muted border border-slate-600 rounded px-3 py-2" />
+        <button id="clear-search" type="button" class="px-3 py-2 rounded border border-slate-600 hover:bg-slate-800 text-sm">Clear</button>
+      </div>
       <div class="overflow-x-auto border border-slate-700 rounded-lg">
         <table class="w-full text-sm">
           <thead class="bg-muted text-slate-300">
@@ -71,7 +75,7 @@
             <input id="city" required type="text" class="w-full bg-muted border border-slate-600 rounded px-3 py-2" />
           </div>
           <div>
-            <label class="block mb-1">State / Province (optional)</label>
+            <label class="block mb-1">State / Province (optional, 2-letter uppercase suggested)</label>
             <input id="state" type="text" class="w-full bg-muted border border-slate-600 rounded px-3 py-2" placeholder="e.g., CA, Ontario" />
           </div>
         </div>
@@ -86,7 +90,7 @@
         </fieldset>
 
         <div>
-          <div class="cf-turnstile" data-theme="dark" data-size="flexible" data-appearance="interaction-only"></div>
+          <div id="turnstile-container" class="cf-turnstile" data-theme="dark" data-size="flexible"></div>
           <p id="turnstile-warning" class="text-amber-300 text-sm mt-2 hidden">Please complete Turnstile verification.</p>
         </div>
 
@@ -139,6 +143,10 @@
     const submitBtn = document.getElementById('submit-btn');
     const rateWarning = document.getElementById('rate-warning');
     const turnstileWarning = document.getElementById('turnstile-warning');
+    const reportSearch = document.getElementById('report-search');
+    const clearSearchBtn = document.getElementById('clear-search');
+    let allReports = [];
+    let turnstileWidgetId = null;
 
     function initializeSubmitterId() {
       let id = localStorage.getItem('submitter_id');
@@ -205,7 +213,7 @@
     function renderReports(reports) {
       reportsBody.innerHTML = '';
       if (!reports.length) {
-        reportsBody.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-slate-400">No reports yet.</td></tr>`;
+        reportsBody.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-slate-400">No reports yet. Be the first to submit.</td></tr>`;
         return;
       }
 
@@ -244,12 +252,37 @@
         .order('created_at', { ascending: false });
 
       if (error) {
+        if (error.message && error.message.toLowerCase().includes('country')) {
+          browseMessage.textContent = 'Error: missing "country" column in reports table. Please add the country column and try again.';
+          return;
+        }
         browseMessage.textContent = `Error loading reports: ${error.message}`;
         return;
       }
 
-      renderReports(data || []);
-      browseMessage.textContent = `Loaded ${data.length} report(s).`;
+      allReports = data || [];
+      applyReportFilter();
+      browseMessage.textContent = allReports.length
+        ? `Loaded ${allReports.length} report(s).`
+        : 'No reports yet. Be the first to submit.';
+    }
+
+    function applyReportFilter() {
+      const query = (reportSearch.value || '').trim().toLowerCase();
+      if (!query) {
+        renderReports(allReports);
+        return;
+      }
+      const filtered = allReports.filter((report) => {
+        const blob = [report.name, report.city, report.state, report.country]
+          .map((v) => (v || '').toLowerCase())
+          .join(' ');
+        return blob.includes(query);
+      });
+      renderReports(filtered);
+      browseMessage.textContent = filtered.length
+        ? `Showing ${filtered.length} of ${allReports.length} report(s).`
+        : 'No matching reports found.';
     }
 
     async function submitReport(event) {
@@ -299,6 +332,12 @@
       const { error } = await supabase.from('reports').insert(payload);
 
       if (error) {
+        if (error.message && error.message.toLowerCase().includes('country')) {
+          submitMessage.textContent = 'Submission failed: "country" column is missing from reports table. Please add it in Supabase.';
+          submitMessage.className = 'mt-4 text-sm text-red-400';
+          submitBtn.disabled = false;
+          return;
+        }
         submitMessage.textContent = `Submission failed: ${error.message}`;
         submitMessage.className = 'mt-4 text-sm text-red-400';
         submitBtn.disabled = false;
@@ -310,9 +349,10 @@
       submitMessage.textContent = 'Report submitted successfully.';
       submitMessage.className = 'mt-4 text-sm text-green-400';
       form.reset();
-      if (window.turnstile) {
-        window.turnstile.reset();
+      if (window.turnstile && turnstileWidgetId !== null) {
+        window.turnstile.reset(turnstileWidgetId);
       }
+      submitBtn.disabled = false;
     }
 
     function setupReportButtons() {
@@ -335,14 +375,21 @@
     }
 
     function configureTurnstile() {
-      const widget = document.querySelector('.cf-turnstile');
+      const widget = document.getElementById('turnstile-container');
       if (!widget) return;
       widget.setAttribute('data-sitekey', config.TURNSTILE_SITE_KEY);
-      if (window.turnstile && window.turnstile.render) {
-        window.turnstile.ready(() => {
-          window.turnstile.render(widget);
+      const waitForTurnstile = () => {
+        if (!window.turnstile || !window.turnstile.render) {
+          setTimeout(waitForTurnstile, 100);
+          return;
+        }
+        if (turnstileWidgetId !== null) return;
+        turnstileWidgetId = window.turnstile.render('#turnstile-container', {
+          sitekey: config.TURNSTILE_SITE_KEY,
+          theme: 'dark'
         });
-      }
+      };
+      waitForTurnstile();
     }
 
     async function bootstrap() {
@@ -352,6 +399,11 @@
       setupReportButtons();
       form.addEventListener('submit', submitReport);
       window.addEventListener('hashchange', renderRoute);
+      reportSearch.addEventListener('input', applyReportFilter);
+      clearSearchBtn.addEventListener('click', () => {
+        reportSearch.value = '';
+        applyReportFilter();
+      });
       renderRoute();
       configureTurnstile();
 
