@@ -6,7 +6,6 @@ create table if not exists public.reports (
   city text not null,
   state text not null,
   categories text[] not null,
-  description text,
   created_at timestamptz not null default now(),
   submitter_uuid text not null
 );
@@ -19,7 +18,7 @@ on public.reports
 for select
 using (true);
 
--- Public insert access (Turnstile should be verified in an edge function/worker in production)
+-- Public insert access (after Turnstile validation in your worker/edge function)
 create policy if not exists "Public can insert reports"
 on public.reports
 for insert

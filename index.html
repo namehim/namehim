@@ -71,8 +71,8 @@
             <input id="city" required type="text" class="w-full bg-muted border border-slate-600 rounded px-3 py-2" />
           </div>
           <div>
-            <label class="block mb-1">State * (2-letter)</label>
-            <input id="state" required maxlength="2" type="text" class="w-full uppercase bg-muted border border-slate-600 rounded px-3 py-2" />
+            <label class="block mb-1">State * (2-letter uppercase)</label>
+            <input id="state" required maxlength="2" pattern="[A-Z]{2}" placeholder="CA" type="text" class="w-full uppercase bg-muted border border-slate-600 rounded px-3 py-2" />
           </div>
         </div>
 
@@ -80,11 +80,6 @@
           <legend class="mb-2">Categories *</legend>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-2" id="category-checkboxes"></div>
         </fieldset>
-
-        <div>
-          <label class="block mb-1">Description (optional, max 500 chars)</label>
-          <textarea id="description" maxlength="500" rows="4" class="w-full bg-muted border border-slate-600 rounded px-3 py-2"></textarea>
-        </div>
 
         <div>
           <div class="cf-turnstile" data-theme="dark" data-size="flexible" data-appearance="interaction-only"></div>
@@ -128,7 +123,8 @@
     const config = {
       SUPABASE_URL: window.NAMEHIM_CONFIG?.SUPABASE_URL || 'YOUR_SUPABASE_URL',
       SUPABASE_ANON_KEY: window.NAMEHIM_CONFIG?.SUPABASE_ANON_KEY || 'YOUR_SUPABASE_ANON_KEY',
-      TURNSTILE_SITE_KEY: window.NAMEHIM_CONFIG?.TURNSTILE_SITE_KEY || 'YOUR_TURNSTILE_SITE_KEY'
+      TURNSTILE_SITE_KEY: window.NAMEHIM_CONFIG?.TURNSTILE_SITE_KEY || 'YOUR_TURNSTILE_SITE_KEY',
+      TURNSTILE_VERIFY_ENDPOINT: window.NAMEHIM_CONFIG?.TURNSTILE_VERIFY_ENDPOINT || ''
     };
 
     const supabase = window.supabase.createClient(config.SUPABASE_URL, config.SUPABASE_ANON_KEY);
@@ -148,6 +144,44 @@
         localStorage.setItem('submitter_id', id);
       }
       return id;
+    }
+
+    async function ensureAnonymousSession() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user?.id) {
+        localStorage.setItem('submitter_id', user.id);
+        return user.id;
+      }
+
+      const { data, error } = await supabase.auth.signInAnonymously();
+      if (error) {
+        throw new Error(`Anonymous sign-in failed: ${error.message}`);
+      }
+
+      const submitterId = data.user?.id || crypto.randomUUID();
+      localStorage.setItem('submitter_id', submitterId);
+      return submitterId;
+    }
+
+    async function verifyTurnstileToken(token) {
+      if (!config.TURNSTILE_VERIFY_ENDPOINT) {
+        throw new Error('Turnstile verification endpoint is not configured.');
+      }
+
+      const response = await fetch(config.TURNSTILE_VERIFY_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token })
+      });
+
+      if (!response.ok) {
+        throw new Error('Turnstile verification request failed.');
+      }
+
+      const result = await response.json();
+      if (!result?.success) {
+        throw new Error('Turnstile verification failed. Please try again.');
+      }
     }
 
     function setupCategoriesUI() {
@@ -264,7 +298,6 @@
       const name = document.getElementById('name').value.trim();
       const city = document.getElementById('city').value.trim();
       const state = document.getElementById('state').value.trim().toUpperCase();
-      const description = document.getElementById('description').value.trim();
       const categories = Array.from(document.querySelectorAll('input[name="categories"]:checked')).map(el => el.value);
 
       if (!categories.length) {
@@ -273,20 +306,32 @@
         return;
       }
 
+      if (!/^[A-Z]{2}$/.test(state)) {
+        submitMessage.textContent = 'State must be a 2-letter uppercase code.';
+        submitMessage.className = 'mt-4 text-sm text-red-400';
+        return;
+      }
+
       submitBtn.disabled = true;
 
-      const payload = {
-        name,
-        city,
-        state,
-        categories,
-        description: description || null,
-        submitter_uuid: localStorage.getItem('submitter_id')
-      };
+      try {
+        await verifyTurnstileToken(token);
+        const submitterUuid = await ensureAnonymousSession();
 
-      const { error } = await supabase.from('reports').insert(payload);
+        const payload = {
+          name,
+          city,
+          state,
+          categories,
+          submitter_uuid: submitterUuid
+        };
 
-      if (error) {
+        const { error } = await supabase.from('reports').insert(payload);
+
+        if (error) {
+          throw new Error(error.message);
+        }
+      } catch (error) {
         submitMessage.textContent = `Submission failed: ${error.message}`;
         submitMessage.className = 'mt-4 text-sm text-red-400';
         submitBtn.disabled = false;
@@ -335,6 +380,7 @@
 
     async function bootstrap() {
       initializeSubmitterId();
+      await ensureAnonymousSession();
       setupCategoriesUI();
       updateRateLimitUI();
       setupReportButtons();
