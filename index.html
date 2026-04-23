@@ -106,7 +106,7 @@
         <a href="about.html" class="hover:text-white underline underline-offset-2">About</a>
         <a href="https://github.com/YOUR-USERNAME/namehim-app" class="hover:text-white underline underline-offset-2">GitHub</a>
       </div>
-      <p>Open source – fork and improve</p>
+      <p>Open source</p>
     </div>
   </footer>
 
@@ -126,9 +126,9 @@
     };
 
     const config = {
-      SUPABASE_URL: window.NAMEHIM_CONFIG?.SUPABASE_URL || 'YOUR_SUPABASE_URL',
-      SUPABASE_ANON_KEY: window.NAMEHIM_CONFIG?.SUPABASE_ANON_KEY || 'YOUR_SUPABASE_ANON_KEY',
-      TURNSTILE_SITE_KEY: window.NAMEHIM_CONFIG?.TURNSTILE_SITE_KEY || 'YOUR_TURNSTILE_SITE_KEY'
+      SUPABASE_URL: window.NAMEHIM_CONFIG?.SUPABASE_URL || https://cmmggaprguusffiphegy.supabase.co,
+      SUPABASE_ANON_KEY: window.NAMEHIM_CONFIG?.SUPABASE_ANON_KEY || sb_publishable_G9Doh6gciyFVT1NDum55ZA_8ryL3fOw,
+      TURNSTILE_SITE_KEY: window.NAMEHIM_CONFIG?.TURNSTILE_SITE_KEY || 0x4AAAAAADCC51BDmfY6JgSc
     };
 
     const supabase = window.supabase.createClient(config.SUPABASE_URL, config.SUPABASE_ANON_KEY);
