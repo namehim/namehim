@@ -153,6 +153,17 @@
       background: #0f172a;
     }
 
+    .table-guidance {
+      margin: 0.85rem 0 0.65rem;
+      font-size: 0.92rem;
+      color: #cbd5e1;
+    }
+
+    .table-guidance span {
+      color: var(--muted);
+      font-size: 0.88rem;
+    }
+
     table {
       width: 100%;
       border-collapse: collapse;
@@ -355,6 +366,9 @@
           <button id="clear-search" type="button">Clear</button>
         </div>
         <div id="map"></div>
+        <p class="table-guidance">
+          Click on a state to see results for that state <span>(full list below).</span>
+        </p>
         <div class="table-wrap">
           <table>
             <thead>
