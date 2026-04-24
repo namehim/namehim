@@ -676,6 +676,7 @@
     ];
 
     let allReports = [];
+    window.allReports = allReports;
 
     // --- ADDED: submitter_uuid management (critical fix) ---
     function getOrCreateSubmitterId() {
@@ -912,6 +913,7 @@
     }
 
     allReports = reports;
+    window.allReports = allReports;
     updateReportCount(allReports.length);
     applySearchFilter();
     browseMessage.textContent = allReports.length
@@ -923,6 +925,7 @@
     browseMessage.textContent = 'Unable to load reports right now. Please try again in a moment.';
     browseMessage.className = 'message error';
     allReports = [];
+    window.allReports = allReports;
     updateReportCount(0);
     renderReportRows([]);
   }
@@ -1089,8 +1092,8 @@
     init();
   </script>
   <!-- At the end of your <body>, before the closing </body> tag -->
-<script src="mapdata.js"></script>
-<script src="usmap.js"></script>
+<script src="mapdata.js?v=2026-04-24-1"></script>
+<script src="usmap.js?v=2026-04-24-1"></script>
 
 
   
