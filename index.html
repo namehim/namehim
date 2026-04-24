@@ -706,6 +706,23 @@
         .join(' ');
     }
 
+    function filterReportsByState(stateFullName) {
+  const searchInput = document.getElementById('report-search');
+  if (searchInput) {
+    searchInput.value = stateFullName;
+  }
+  // Reuse your existing search filter
+  if (typeof applySearchFilter === 'function') {
+    applySearchFilter();
+  } else {
+    // Fallback
+    const filtered = allReports.filter(r => r.state === stateFullName);
+    renderReportRows(filtered);
+    const browseMsg = document.getElementById('browse-message');
+    if (browseMsg) browseMsg.textContent = filtered.length ? `Showing ${filtered.length} of ${allReports.length} report(s).` : 'No reports found.';
+  }
+}
+    
     function getCategoryClass(category) {
       return category.replace(/\s+/g, '-');
     }
