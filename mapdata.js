@@ -28,7 +28,7 @@ var simplemaps_usmap_mapdata={
     location_border: 2,
     location_hover_border: 2.5,
     all_locations_inactive: "no",
-    all_locations_hidden: "no",
+    all_locations_hidden: "yes",
     
 		//Label defaults
 		label_color: "#ffffff",
