@@ -290,6 +290,17 @@
 
     .warning { color: #f59e0b; font-size: 0.85rem; margin-top: 0.5rem; }
     .hidden { display: none !important; }
+    .map-toggle-wrap {
+      margin-bottom: 0.65rem;
+    }
+
+    .map-toggle-btn {
+      min-width: 10rem;
+    }
+
+    #map {
+      display: none;
+    }
 
     footer {
       border-top: 1px solid var(--border);
@@ -392,6 +403,9 @@
           </select>
           <span>(full list below).</span>
         </p>
+        <div class="map-toggle-wrap">
+          <button id="toggle-map-btn" class="map-toggle-btn" type="button" aria-expanded="false" aria-controls="map">Show US Map</button>
+        </div>
         <div id="map"></div>
         
         <div class="table-wrap">
@@ -705,6 +719,9 @@
     const countryField = document.getElementById('country');
     const stateFieldContainer = document.getElementById('state-field-container');
     const browseStateSelect = document.getElementById('browse-state-select');
+    const mapContainer = document.getElementById('map');
+    const toggleMapBtn = document.getElementById('toggle-map-btn');
+    const MAP_VISIBILITY_STORAGE_KEY = 'namehim_us_map_visible';
     const browsePagination = document.getElementById('browse-pagination');
     const REPORTS_PER_PAGE = 100;
 
@@ -1168,6 +1185,48 @@
   }, 30000); // 30 seconds = 30,000 milliseconds
 }
 
+    function refreshSimpleMap() {
+      if (!window.simplemaps_usmap || typeof window.simplemaps_usmap.refresh !== 'function') {
+        return;
+      }
+      window.requestAnimationFrame(function () {
+        window.simplemaps_usmap.refresh();
+      });
+    }
+
+    function setMapVisibility(isVisible, persistPreference = true) {
+      if (!mapContainer || !toggleMapBtn) {
+        return;
+      }
+
+      mapContainer.style.display = isVisible ? 'block' : 'none';
+      toggleMapBtn.textContent = isVisible ? 'Hide US Map' : 'Show US Map';
+      toggleMapBtn.setAttribute('aria-expanded', String(isVisible));
+
+      if (persistPreference) {
+        localStorage.setItem(MAP_VISIBILITY_STORAGE_KEY, isVisible ? '1' : '0');
+      }
+
+      if (isVisible) {
+        refreshSimpleMap();
+      }
+    }
+
+    function initMapToggle() {
+      if (!mapContainer || !toggleMapBtn) {
+        return;
+      }
+
+      const savedVisibility = localStorage.getItem(MAP_VISIBILITY_STORAGE_KEY);
+      const shouldShowMap = savedVisibility === '1';
+      setMapVisibility(shouldShowMap, false);
+
+      toggleMapBtn.addEventListener('click', function onMapToggleClick() {
+        const isVisible = mapContainer.style.display !== 'none';
+        setMapVisibility(!isVisible);
+      });
+    }
+
     function init() {
       // Ensure a submitter_id exists right away (used for rate limits? no, but good practice)
       getOrCreateSubmitterId();
@@ -1179,8 +1238,14 @@
       startRealtimeUpdates();
       renderStateField();
       populateBrowseStateSelect();
+      initMapToggle();
 
       window.addEventListener('hashchange', renderRoute);
+      window.addEventListener('load', function onWindowLoad() {
+        if (mapContainer && mapContainer.style.display !== 'none') {
+          refreshSimpleMap();
+        }
+      });
       countryField.addEventListener('change', renderStateField);
       reportSearch.addEventListener('input', applySearchFilter);
       clearSearch.addEventListener('click', function clearSearchInput() {
