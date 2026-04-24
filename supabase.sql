@@ -4,7 +4,8 @@ create table if not exists public.reports (
   id serial primary key,
   name text not null,
   city text not null,
-  state text not null,
+  state varchar(10),
+  country text not null,
   categories text[] not null,
   created_at timestamptz not null default now(),
   submitter_uuid text not null
