@@ -91,6 +91,18 @@
     h1 { margin: 0; font-size: 1.7rem; }
     .site-title-link { color: inherit; text-decoration: none; }
     .site-title-link:hover { text-decoration: underline; text-underline-offset: 0.18em; }
+    .site-title-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+    }
+    .report-count {
+      margin: 0;
+      font-size: 0.92rem;
+      color: #93c5fd;
+      letter-spacing: 0.02em;
+      text-shadow: 0 0 18px rgba(96, 165, 250, 0.35);
+    }
     h2 { margin-top: 0; margin-bottom: 1rem; font-size: 1.4rem; }
 
     .controls {
@@ -281,7 +293,10 @@
 
   <header>
     <div class="container header-inner">
-      <h1><a class="site-title-link" href="index.html#/browse">NameHim</a></h1>
+      <div class="site-title-wrap">
+        <h1><a class="site-title-link" href="index.html#/browse">NameHim</a></h1>
+        <p id="report-count" class="report-count">Loading reports and counting...</p>
+      </div>
       <nav>
         <a href="#/browse" class="nav-link" data-route="#/browse">Browse</a>
         <a href="#/submit" class="nav-link" data-route="#/submit">Submit</a>
@@ -602,6 +617,7 @@
     const rateWarning = document.getElementById('rate-warning');
     const turnstileWarning = document.getElementById('turnstile-warning');
     const categoryContainer = document.getElementById('category-checkboxes');
+    const reportCount = document.getElementById('report-count');
 
     let allReports = [];
 
@@ -713,6 +729,10 @@
       return parts.join(', ');
     }
 
+    function updateReportCount(total) {
+      reportCount.textContent = total + ' reports and counting!';
+    }
+
     function renderReportRows(reports) {
       reportsBody.innerHTML = '';
 
@@ -788,11 +808,13 @@
         }
         browseMessage.className = 'message error';
         allReports = [];
+        updateReportCount(0);
         renderReportRows([]);
         return;
       }
 
       allReports = Array.isArray(response.data) ? response.data : [];
+      updateReportCount(allReports.length);
       applySearchFilter();
     }
 
