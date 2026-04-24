@@ -1074,5 +1074,212 @@
   <!-- At the end of your <body>, before the closing </body> tag -->
 <script src="mapdata.js"></script>
 <script src="usmap.js"></script>
+
+<script>
+  // Wait for the map to be ready
+  document.addEventListener('DOMContentLoaded', function() {
+    // If the map is already loaded, configure it
+    function configureMap() {
+      if (typeof simplemaps_usmap === 'undefined') {
+        setTimeout(configureMap, 100);
+        return;
+      }
+
+      // 1. Change hover fill to purple
+      simplemaps_usmap.map_config.state_hover_color = '#a855f7';
+      // 2. Change default state color (optional)
+      simplemaps_usmap.map_config.state_color = '#2d3748';
+      // 3. Change tooltip template to include report count
+      simplemaps_usmap.map_config.tooltip_template = '<div style="background:#111827; border:1px solid #334155; border-radius:0.5rem; padding:0.3rem 0.7rem; font-size:0.8rem;"><strong>{STATE_NAME}</strong><br/>Reports: {REPORT_COUNT}</div>';
+      
+      // Refresh the map with new config
+      if (simplemaps_usmap.refresh) simplemaps_usmap.refresh();
+      
+      // 4. Add click handler for state selection
+      simplemaps_usmap.map_config.state_hover = function(data) {
+        // Called when hovering, we could update a global variable
+      };
+      
+      // Use the built-in click hook
+      if (!simplemaps_usmap.map_config.state_click) {
+        simplemaps_usmap.map_config.state_click = function(data) {
+          const code = data.code;        // two-letter code, e.g. "NY"
+          const fullName = stateCodeToName[code] || data.name;
+          filterReportsByState(fullName);
+        };
+      }
+    }
+
+    // Helper: mapping from two‑letter code to full state name (same as your dropdown)
+    const stateCodeToName = {
+      "AL": "Alabama", "AK": "Alaska", "AZ": "Arizona", "AR": "Arkansas", "CA": "California",
+      "CO": "Colorado", "CT": "Connecticut", "DE": "Delaware", "FL": "Florida", "GA": "Georgia",
+      "HI": "Hawaii", "ID": "Idaho", "IL": "Illinois", "IN": "Indiana", "IA": "Iowa",
+      "KS": "Kansas", "KY": "Kentucky", "LA": "Louisiana", "ME": "Maine", "MD": "Maryland",
+      "MA": "Massachusetts", "MI": "Michigan", "MN": "Minnesota", "MS": "Mississippi", "MO": "Missouri",
+      "MT": "Montana", "NE": "Nebraska", "NV": "Nevada", "NH": "New Hampshire", "NJ": "New Jersey",
+      "NM": "New Mexico", "NY": "New York", "NC": "North Carolina", "ND": "North Dakota", "OH": "Ohio",
+      "OK": "Oklahoma", "OR": "Oregon", "PA": "Pennsylvania", "RI": "Rhode Island", "SC": "South Carolina",
+      "SD": "South Dakota", "TN": "Tennessee", "TX": "Texas", "UT": "Utah", "VT": "Vermont",
+      "VA": "Virginia", "WA": "Washington", "WV": "West Virginia", "WI": "Wisconsin", "WY": "Wyoming"
+    };
+
+    // Function to compute report count per state from your global `allReports`
+    function getReportCountByState() {
+      const counts = {};
+      allReports.forEach(report => {
+        const stateName = report.state;
+        if (stateName && typeof stateName === 'string') {
+          counts[stateName] = (counts[stateName] || 0) + 1;
+        }
+      });
+      return counts;
+    }
+
+    // Override the tooltip content to show the count
+    function updateTooltipWithCounts() {
+      if (!simplemaps_usmap.tooltip || !simplemaps_usmap.mapdata) return;
+      const counts = getReportCountByState();
+      for (let code in simplemaps_usmap.mapdata) {
+        const state = simplemaps_usmap.mapdata[code];
+        const fullName = stateCodeToName[code] || state.name;
+        const count = counts[fullName] || 0;
+        // The map uses a hidden state variable; we can inject the count into the tooltip template
+        // The easiest is to set a custom tooltip template dynamically before hover? 
+        // Simpler: we can pre‑render the tooltip HTML ourselves. But the library already uses `tooltip_template`.
+        // We'll modify the template to use a placeholder and replace it at hover time.
+      }
+    }
+
+    // Better approach: override the tooltip rendering function (if possible)
+    // But Simplemaps doesn't expose a direct hook. Instead, we can update the `map_config.tooltip_template` 
+    // and then replace a special marker with the count on each hover.
+    // However, the simplest reliable way: add an event listener on every state path after map loads.
+    function attachCustomTooltipAndClick() {
+      const mapContainer = document.getElementById('map');
+      if (!mapContainer) return;
+      const svg = mapContainer.querySelector('svg');
+      if (!svg) return;
+      const paths = svg.querySelectorAll('path');
+      paths.forEach(path => {
+        const code = path.getAttribute('data-code');
+        if (!code) return;
+        const fullName = stateCodeToName[code];
+        // Remove existing listeners to avoid duplicates
+        path.removeEventListener('click', path._clickHandler);
+        path.removeEventListener('mouseenter', path._mouseenterHandler);
+        path.removeEventListener('mouseleave', path._mouseleaveHandler);
+        
+        // Mouseenter: change fill to purple, show custom tooltip
+        path.addEventListener('mouseenter', (e) => {
+          const count = getReportCountByState()[fullName] || 0;
+          const tooltip = document.createElement('div');
+          tooltip.className = 'custom-map-tooltip';
+          tooltip.innerHTML = `<strong>${fullName}</strong><br/>Reports: ${count}`;
+          tooltip.style.position = 'absolute';
+          tooltip.style.background = '#111827';
+          tooltip.style.border = '1px solid #334155';
+          tooltip.style.borderRadius = '0.5rem';
+          tooltip.style.padding = '0.3rem 0.7rem';
+          tooltip.style.fontSize = '0.8rem';
+          tooltip.style.pointerEvents = 'none';
+          tooltip.style.zIndex = '1000';
+          document.body.appendChild(tooltip);
+          
+          const updatePosition = (e) => {
+            tooltip.style.left = (e.clientX + 15) + 'px';
+            tooltip.style.top = (e.clientY - 30) + 'px';
+          };
+          updatePosition(e);
+          const onMouseMove = (moveEvent) => {
+            updatePosition(moveEvent);
+          };
+          document.addEventListener('mousemove', onMouseMove);
+          path._tooltip = tooltip;
+          path._moveHandler = onMouseMove;
+          
+          // Change fill (temporarily)
+          const originalFill = path.getAttribute('fill');
+          path.setAttribute('fill', '#a855f7');
+          path._originalFill = originalFill;
+        });
+        
+        path.addEventListener('mouseleave', () => {
+          if (path._tooltip) {
+            path._tooltip.remove();
+            path._tooltip = null;
+          }
+          if (path._moveHandler) {
+            document.removeEventListener('mousemove', path._moveHandler);
+            path._moveHandler = null;
+          }
+          if (path._originalFill) {
+            path.setAttribute('fill', path._originalFill);
+          } else {
+            path.setAttribute('fill', '#2d3748');
+          }
+        });
+        
+        // Click handler
+        const clickHandler = () => {
+          filterReportsByState(fullName);
+        };
+        path.addEventListener('click', clickHandler);
+        path._clickHandler = clickHandler;
+      });
+    }
+    
+    // Function to filter reports by state (full name)
+    function filterReportsByState(stateFullName) {
+      // Update the search input to the state name (so existing clear button works)
+      const searchInput = document.getElementById('report-search');
+      if (searchInput) {
+        searchInput.value = stateFullName;
+      }
+      // Directly filter allReports and re-render (reuse your existing applySearchFilter logic)
+      // But applySearchFilter uses search input value. So we can just call applySearchFilter.
+      if (typeof applySearchFilter === 'function') {
+        applySearchFilter();
+      } else {
+        // Fallback: manual filter
+        const filtered = allReports.filter(r => r.state === stateFullName);
+        renderReportRows(filtered);
+        browseMessage.textContent = filtered.length ? `Showing ${filtered.length} of ${allReports.length} report(s).` : 'No reports found.';
+      }
+    }
+    
+    // Also modify the existing clear search button to also clear state filter if needed
+    const clearBtn = document.getElementById('clear-search');
+    if (clearBtn) {
+      const originalClick = clearBtn.onclick;
+      clearBtn.addEventListener('click', () => {
+        // Clear search input and re-render all
+        const searchInput = document.getElementById('report-search');
+        if (searchInput) searchInput.value = '';
+        applySearchFilter();
+      });
+    }
+    
+    // Wait for the map to be fully loaded (the SVG might be injected later)
+    function waitForMap() {
+      const mapDiv = document.getElementById('map');
+      if (mapDiv && mapDiv.querySelector('svg')) {
+        attachCustomTooltipAndClick();
+        // Also observe for changes (the map might reload)
+        const observer = new MutationObserver(() => {
+          attachCustomTooltipAndClick();
+        });
+        observer.observe(mapDiv, { childList: true, subtree: true });
+      } else {
+        setTimeout(waitForMap, 200);
+      }
+    }
+    
+    // Start the configuration after map script loads
+    configureMap();
+    waitForMap();
+  });
+</script>
+  
 </body>
 </html>
