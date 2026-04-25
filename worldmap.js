@@ -18,6 +18,11 @@ var simplemaps_worldmap_mapinfo={  map_name: "world",  initial_view: {    x: 0, 
   var ACTIVE_COUNTRY_COLOR = "#7c3aed";
   var applied = false;
   var selectedCountryId = null;
+  var COUNTRY_COUNT_ALIASES = {
+    "united states of america": "united states",
+    usa: "united states",
+    us: "united states"
+  };
 
   function normalizeText(value) {
     return String(value || "")
@@ -74,14 +79,19 @@ var simplemaps_worldmap_mapinfo={  map_name: "world",  initial_view: {    x: 0, 
       : regionId;
   }
 
+  function normalizeCountryForCount(countryName) {
+    var normalized = normalizeText(countryName);
+    return COUNTRY_COUNT_ALIASES[normalized] || normalized;
+  }
+
   function getCountryReportCount(countryName) {
     var reports = Array.isArray(window.allReports) ? window.allReports : [];
-    var target = normalizeText(countryName);
+    var target = normalizeCountryForCount(countryName);
     var count = 0;
     var i;
 
     for (i = 0; i < reports.length; i += 1) {
-      if (normalizeText(reports[i] && reports[i].country) === target) {
+      if (normalizeCountryForCount(reports[i] && reports[i].country) === target) {
         count += 1;
       }
     }
@@ -103,12 +113,12 @@ var simplemaps_worldmap_mapinfo={  map_name: "world",  initial_view: {    x: 0, 
     for (i = 0; i < states.length; i += 1) {
       countryId = states[i];
       if (countrySpecific[countryId] && countrySpecific[countryId].name) {
-        countryLookup[normalizeText(countrySpecific[countryId].name)] = true;
+        countryLookup[normalizeCountryForCount(countrySpecific[countryId].name)] = true;
       }
     }
 
     for (i = 0; i < reports.length; i += 1) {
-      if (countryLookup[normalizeText(reports[i] && reports[i].country)]) {
+      if (countryLookup[normalizeCountryForCount(reports[i] && reports[i].country)]) {
         count += 1;
       }
     }
