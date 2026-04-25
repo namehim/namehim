@@ -500,7 +500,7 @@
       <nav>
         <a href="#/browse" class="nav-link" data-route="#/browse">Browse</a>
         <a href="#/submit" class="nav-link" data-route="#/submit">Submit</a>
-        <a href="#/voices" class="nav-link" data-route="#/community">Community</a>
+        <a href="#/community" class="nav-link" data-route="#/community">Community</a>
         <a href="about.html" class="nav-link">About</a>
       </nav>
     </div>
@@ -844,7 +844,7 @@
     const routes = {
   '#/browse': 'page-browse',
   '#/submit': 'page-submit',
-  '#/voices': 'page-community'
+  '#/community': 'page-community'
 };
 
     const CATEGORIES = [
@@ -1102,7 +1102,7 @@ function filterReportsByState(stateFullName) {
 
     function getCurrentRoute() {
       const hashPath = getHashPath();
-      return ROUTES[hashPath] ? hashPath : '#/browse';
+      return routes[hashPath] ? hashPath : '#/browse';
     }
 
     function getReportIdFromUrl() {
@@ -1224,24 +1224,6 @@ function filterReportsByState(stateFullName) {
     }
 
     function renderRoute() {
-      const route = getCurrentRoute();
-
-      if (getHashPath() !== route) {
-        window.location.hash = route;
-        return;
-      }
-
-      pageBrowse.classList.toggle('active', route === '#/browse');
-      pageSubmit.classList.toggle('active', route === '#/submit');
-
-      document.querySelectorAll('[data-route]').forEach((link) => {
-        link.classList.toggle('active', link.getAttribute('data-route') === route);
-      });
-
-      updateBrowseViewFromRoute();
-    }
-
-    function renderRoute() {
   const route = getCurrentRoute();
 
   if (getHashPath() !== route) {
@@ -1251,8 +1233,8 @@ function filterReportsByState(stateFullName) {
 
   pageBrowse.classList.toggle('active', route === '#/browse');
   pageSubmit.classList.toggle('active', route === '#/submit');
-  const voicesPage = document.getElementById('page-voices');
-  if (voicesPage) voicesPage.classList.toggle('active', route === '#/voices');
+  const communityPage = document.getElementById('page-community');
+  if (communityPage) communityPage.classList.toggle('active', route === '#/community');
 
   document.querySelectorAll('[data-route]').forEach((link) => {
     link.classList.toggle('active', link.getAttribute('data-route') === route);
@@ -1260,7 +1242,7 @@ function filterReportsByState(stateFullName) {
 
   updateBrowseViewFromRoute();
 
-  if (route === '#/voices') {
+  if (route === '#/community') {
     loadApprovedStories();
   }
 }
@@ -1564,19 +1546,7 @@ function addStoryTimestamp() {
         .map((input) => input.value);
     }
 
-    async function handleSubmit(event) {
-      event.preventDefault();
-      submitMessage.textContent = '';
-      submitMessage.className = 'message';
-      turnstileWarning.classList.add('hidden');
-
-      if (updateRateLimitUI()) {
-        submitMessage.textContent = 'Rate limit reached. Please wait before submitting again.';
-        submitMessage.className = 'message error';
-        return;
-      }
-
-      async function submitStory(event) {
+    async function submitStory(event) {
   event.preventDefault();
   storyMessage.textContent = '';
   storyTurnstileWarning.classList.add('hidden');
@@ -1624,6 +1594,18 @@ function addStoryTimestamp() {
   if (window.turnstile) window.turnstile.reset();
   storySubmitBtn.disabled = false;
 }
+
+    async function handleSubmit(event) {
+      event.preventDefault();
+      submitMessage.textContent = '';
+      submitMessage.className = 'message';
+      turnstileWarning.classList.add('hidden');
+
+      if (updateRateLimitUI()) {
+        submitMessage.textContent = 'Rate limit reached. Please wait before submitting again.';
+        submitMessage.className = 'message error';
+        return;
+      }
 
       const token = getTurnstileToken();
       if (!token) {
