@@ -1664,7 +1664,7 @@ initWorldMapToggle();
     // The name is usually `simplemaps_worldmap` or similar. Check your `worldmap.js` file.
     // We'll detect it and attach events.
     function setupWorldMap() {
-      const worldMapObj = window.simplemaps_worldmap_map;
+      const worldMapObj = window.simplemaps_worldmap;
       if (!worldMapObj) {
         // If different variable name, look for it; but we'll assume it's `simplemaps_worldmap`
         console.warn('worldmap object not found, retrying in 200ms');
