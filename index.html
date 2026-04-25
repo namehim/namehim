@@ -372,13 +372,22 @@
       width: 100%;
       max-width: 100%;
       min-height: 0;
-      aspect-ratio: 2 / 1;
       position: relative;
       overflow: hidden;
       margin-bottom: 1rem;
       border: 1px solid var(--border);
       border-radius: 0.7rem;
       background: #0f172a;
+    }
+
+    #world-map a[href*="simplemaps.com"],
+    #world-map a[href*="openstreetmap.org"],
+    #world-map [class*="copyright"],
+    #world-map [id*="copyright"] {
+      display: none !important;
+      visibility: hidden !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
     }
 
     footer {
@@ -449,9 +458,6 @@
     align-self: flex-start;
   }
 
-  #world-map {
-    aspect-ratio: 16 / 9;
-  }
 }
     
   </style>
@@ -1744,7 +1750,7 @@ initWorldMapInteractions();
     window.simplemaps_worldmap_mapdata.main_settings.auto_load = 'yes';
   }
 </script>
-<script src="worldmap.js?v=2026-04-25-3"></script>
+<script src="worldmap.js?v=2026-04-25-4"></script>
 
 </body>
 </html>

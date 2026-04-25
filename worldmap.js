@@ -19,6 +19,7 @@ var simplemaps_worldmap_mapinfo={  map_name: "world",  initial_view: {    x: 0, 
   var applied = false;
   var selectedCountryId = null;
   var brandingObserver = null;
+  var cleanupIntervalId = null;
   var COUNTRY_COUNT_ALIASES = {
     "united states of america": "united states",
     usa: "united states",
@@ -70,6 +71,32 @@ var simplemaps_worldmap_mapinfo={  map_name: "world",  initial_view: {    x: 0, 
       svg.style.display = "block";
       svg.style.maxWidth = "100%";
       svg.style.height = "auto";
+    }
+
+    normalizeMapChildrenLayout();
+  }
+
+  function normalizeMapChildrenLayout() {
+    var container = getMapContainer();
+    var children;
+    var i;
+    var child;
+
+    if (!container) {
+      return;
+    }
+
+    children = container.children || [];
+    for (i = 0; i < children.length; i += 1) {
+      child = children[i];
+      if (!child) {
+        continue;
+      }
+
+      child.style.maxWidth = "100%";
+      if (child.tagName === "DIV") {
+        child.style.width = "100%";
+      }
     }
   }
 
@@ -294,7 +321,14 @@ var simplemaps_worldmap_mapinfo={  map_name: "world",  initial_view: {    x: 0, 
       ensureMapLayout();
     });
 
-    brandingObserver.observe(container, { childList: true, subtree: true });
+    brandingObserver.observe(container, { childList: true, subtree: true, characterData: true, attributes: true });
+
+    if (!cleanupIntervalId) {
+      cleanupIntervalId = window.setInterval(function () {
+        removeSimpleMapsBranding();
+        ensureMapLayout();
+      }, 600);
+    }
   }
 
   function moveTooltip(event) {
