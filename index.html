@@ -1352,7 +1352,17 @@ function addStoryTimestamp() {
         return '';
       }
 
-      const date = new Date(timestamp);
+      const timestampValue = String(timestamp).trim();
+      if (!timestampValue) {
+        return '';
+      }
+
+      const hasTimezoneInfo = /([zZ]|[+-]\d{2}:?\d{2})$/.test(timestampValue);
+      const normalizedTimestamp = hasTimezoneInfo
+        ? timestampValue
+        : timestampValue.replace(' ', 'T') + 'Z';
+
+      const date = new Date(normalizedTimestamp);
       if (Number.isNaN(date.getTime())) {
         return '';
       }
