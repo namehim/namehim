@@ -221,6 +221,34 @@
 
     .message.error { color: var(--danger); }
     .message.success { color: var(--success); }
+    .single-report-controls {
+      margin-bottom: 0.75rem;
+    }
+    .row-actions {
+      display: flex;
+      gap: 0.45rem;
+      flex-wrap: wrap;
+    }
+    .toast {
+      position: fixed;
+      right: 1rem;
+      bottom: 1rem;
+      background: #0f172a;
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 0.55rem;
+      padding: 0.6rem 0.8rem;
+      font-size: 0.9rem;
+      z-index: 100;
+      opacity: 0;
+      transform: translateY(8px);
+      transition: opacity 180ms ease, transform 180ms ease;
+      pointer-events: none;
+    }
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
 
     .pagination {
       display: flex;
@@ -402,6 +430,9 @@
         <div class="controls">
           <input id="report-search" class="search-input" type="text" placeholder="Search by name, city, state, or country..." />
           <button id="clear-search" type="button">Clear</button>
+        </div>
+        <div id="single-report-controls" class="single-report-controls hidden">
+          <button id="back-to-all-reports" type="button">← Back to all reports</button>
         </div>
         <p class="table-guidance">
           Select a state from the list or click show map to see results for specific locations. (More maps and options will be coming soon, including a world map).
@@ -716,6 +747,8 @@
     const submitMessage = document.getElementById('submit-message');
     const reportSearch = document.getElementById('report-search');
     const clearSearch = document.getElementById('clear-search');
+    const singleReportControls = document.getElementById('single-report-controls');
+    const backToAllReportsBtn = document.getElementById('back-to-all-reports');
     const reportsBody = document.getElementById('reports-body');
     const reportForm = document.getElementById('report-form');
     const submitBtn = document.getElementById('submit-btn');
@@ -731,6 +764,7 @@
     const MAP_VISIBILITY_STORAGE_KEY = 'namehim_us_map_visible';
     const browsePagination = document.getElementById('browse-pagination');
     const REPORTS_PER_PAGE = 100;
+    const DEFAULT_PAGE_TITLE = document.title || 'NameHim';
 
     const US_STATES = [
       'Alabama', 'Alaska', 'Arizona', 'Arkansas', 'California', 'Colorado', 'Connecticut', 'Delaware',
@@ -748,6 +782,8 @@
     window.allReports = allReports;
     let currentFilteredReports = [];
     let currentPage = 1;
+    let activeSingleReportId = null;
+    let hasLoadedReports = false;
 
     // --- ADDED: submitter_uuid management (critical fix) ---
     function getOrCreateSubmitterId() {
@@ -830,14 +866,139 @@
       });
     }
 
+    function getHashPath() {
+      const hash = window.location.hash || '#/browse';
+      const hashWithoutQuery = hash.split('?')[0];
+      return hashWithoutQuery || '#/browse';
+    }
+
     function getCurrentRoute() {
-      return ROUTES[window.location.hash] ? window.location.hash : '#/browse';
+      const hashPath = getHashPath();
+      return ROUTES[hashPath] ? hashPath : '#/browse';
+    }
+
+    function getReportIdFromUrl() {
+      const hash = window.location.hash || '';
+      const queryString = hash.includes('?') ? hash.slice(hash.indexOf('?') + 1) : '';
+      if (!queryString) {
+        return null;
+      }
+      const params = new URLSearchParams(queryString);
+      const reportId = (params.get('report') || '').trim();
+      return reportId || null;
+    }
+
+    function showToast(message) {
+      let toast = document.getElementById('toast-message');
+      if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'toast-message';
+        toast.className = 'toast';
+        document.body.appendChild(toast);
+      }
+
+      toast.textContent = message;
+      toast.classList.add('show');
+      window.clearTimeout(showToast.timeoutId);
+      showToast.timeoutId = window.setTimeout(function hideToast() {
+        toast.classList.remove('show');
+      }, 1500);
+    }
+
+    function getShareUrl(reportId) {
+      const safeId = encodeURIComponent(String(reportId || '').trim());
+      return window.location.origin + window.location.pathname + '#/browse?report=' + safeId;
+    }
+
+    async function copyShareLink(reportId) {
+      const shareUrl = getShareUrl(reportId);
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+        showToast('Link copied to clipboard');
+      } catch (error) {
+        console.error('Clipboard write failed:', error);
+        showToast('Could not copy link');
+      }
+    }
+
+    function clearSingleReportHash() {
+      if (window.location.hash !== '#/browse') {
+        window.location.hash = '#/browse';
+      }
+    }
+
+    function setSingleReportControlsVisible(visible) {
+      if (!singleReportControls) {
+        return;
+      }
+      singleReportControls.classList.toggle('hidden', !visible);
+    }
+
+    function setBrowseTitleForSingleReport(report) {
+      if (report && report.name) {
+        document.title = 'NameHim – Report for ' + report.name;
+      } else {
+        document.title = DEFAULT_PAGE_TITLE;
+      }
+    }
+
+    function showSingleReport(report) {
+      activeSingleReportId = String(report.id || '');
+      setSingleReportControlsVisible(true);
+      reportSearch.value = '';
+      setStateDropdownValue('');
+      renderReportRows([report]);
+      renderPagination(0, 1);
+      browseMessage.textContent = 'Showing shared report #' + activeSingleReportId + '.';
+      browseMessage.className = 'message';
+      setBrowseTitleForSingleReport(report);
+    }
+
+    function showReportNotFound(reportId) {
+      activeSingleReportId = reportId;
+      setSingleReportControlsVisible(true);
+      renderReportRows([]);
+      renderPagination(0, 1);
+      reportsBody.innerHTML = '<tr><td colspan="4">Report not found. <a href="#/browse">Back to all reports</a>.</td></tr>';
+      browseMessage.textContent = 'Report not found.';
+      browseMessage.className = 'message error';
+      setBrowseTitleForSingleReport(null);
+    }
+
+    function updateBrowseViewFromRoute() {
+      const route = getCurrentRoute();
+      if (route !== '#/browse') {
+        activeSingleReportId = null;
+        setSingleReportControlsVisible(false);
+        setBrowseTitleForSingleReport(null);
+        return;
+      }
+
+      const reportId = getReportIdFromUrl();
+      if (!reportId) {
+        activeSingleReportId = null;
+        setSingleReportControlsVisible(false);
+        setBrowseTitleForSingleReport(null);
+        applySearchFilter();
+        return;
+      }
+
+      if (!hasLoadedReports) {
+        return;
+      }
+
+      const matched = allReports.find((report) => String(report.id) === reportId);
+      if (matched) {
+        showSingleReport(matched);
+      } else {
+        showReportNotFound(reportId);
+      }
     }
 
     function renderRoute() {
       const route = getCurrentRoute();
 
-      if (window.location.hash !== route) {
+      if (getHashPath() !== route) {
         window.location.hash = route;
         return;
       }
@@ -849,6 +1010,7 @@
         link.classList.toggle('active', link.getAttribute('data-route') === route);
       });
 
+      updateBrowseViewFromRoute();
     }
 
     function normalizeTimestamps(values) {
@@ -955,7 +1117,12 @@
     <td data-label="Name">${escapeHTML(report.name || '')}</td>
     <td data-label="Location">${formatLocation(report.city, report.state, report.country)}</td>
     <td data-label="Categories"><div class="pills">${pillHTML}</div></td>
-    <td data-label="Actions"><button type="button" class="report-entry-btn" data-report-id="${escapeHTML(report.id || '')}">Report this entry</button></td>
+    <td data-label="Actions">
+      <div class="row-actions">
+        <button type="button" class="report-entry-btn" data-report-id="${escapeHTML(report.id || '')}">Report this entry</button>
+        <button type="button" class="report-share-btn" data-report-id="${escapeHTML(report.id || '')}">Share</button>
+      </div>
+    </td>
   `;
   reportsBody.appendChild(row);
 });
@@ -993,6 +1160,17 @@
     }
 
     function applySearchFilter() {
+      const reportId = getReportIdFromUrl();
+      if (getCurrentRoute() === '#/browse' && reportId) {
+        const matched = allReports.find((report) => String(report.id) === reportId);
+        if (matched) {
+          showSingleReport(matched);
+        } else {
+          showReportNotFound(reportId);
+        }
+        return;
+      }
+
       const query = (reportSearch.value || '').trim().toLowerCase();
 
       if (!query) {
@@ -1037,8 +1215,9 @@
 
     allReports = reports;
     window.allReports = allReports;
+    hasLoadedReports = true;
     updateReportCount(allReports.length);
-    applySearchFilter();
+    updateBrowseViewFromRoute();
     browseMessage.textContent = allReports.length
       ? `Loaded ${allReports.length} report(s).`
       : 'No reports yet. Be the first to submit.';
@@ -1049,6 +1228,7 @@
     browseMessage.className = 'message error';
     allReports = [];
     window.allReports = allReports;
+    hasLoadedReports = true;
     updateReportCount(0);
     renderPagedReports([], 1);
   }
@@ -1142,6 +1322,15 @@
 
     async function setupReportActionHandler() {
   reportsBody.addEventListener('click', async function onTableClick(event) {
+    const shareButton = event.target.closest('.report-share-btn');
+    if (shareButton) {
+      const sharedReportId = shareButton.getAttribute('data-report-id');
+      if (sharedReportId) {
+        await copyShareLink(sharedReportId);
+      }
+      return;
+    }
+
     const button = event.target.closest('.report-entry-btn');
     if (!button) return;
     const reportId = button.getAttribute('data-report-id');
@@ -1261,8 +1450,22 @@
         if (typeof window.clearSelectedMapState === 'function') {
           window.clearSelectedMapState();
         }
+        if (getReportIdFromUrl()) {
+          clearSingleReportHash();
+          return;
+        }
         applySearchFilter();
       });
+      if (backToAllReportsBtn) {
+        backToAllReportsBtn.addEventListener('click', function onBackToAllReportsClick() {
+          reportSearch.value = '';
+          setStateDropdownValue('');
+          clearSingleReportHash();
+          if (typeof window.clearSelectedMapState === 'function') {
+            window.clearSelectedMapState();
+          }
+        });
+      }
       if (browseStateSelect) {
         browseStateSelect.addEventListener('change', function onStateSelectChange() {
           const selectedState = browseStateSelect.value;
