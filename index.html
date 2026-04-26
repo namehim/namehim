@@ -1380,6 +1380,17 @@ function addStoryTimestamp() {
       });
     }
 
+    function formatCommunityPostTimestamp(timestamp) {
+      const formattedTimestamp = formatTimestamp(timestamp);
+      if (!formattedTimestamp) {
+        return 'Unknown date/time (PDT)';
+      }
+
+      return formattedTimestamp.includes('PDT')
+        ? formattedTimestamp
+        : `${formattedTimestamp} PDT`;
+    }
+
     function hasNumber(value) {
       return /\d/.test(String(value || ''));
     }
@@ -1610,13 +1621,13 @@ function addStoryTimestamp() {
 
   let html = '';
   for (const story of data) {
-    const date = new Date(story.created_at).toLocaleDateString();
+    const submittedAt = formatCommunityPostTimestamp(story.created_at);
     const titleHtml = story.title ? `<h4>${escapeHTML(story.title)}</h4>` : '';
     html += `
       <div class="story-card">
         ${titleHtml}
         <p>${escapeHTML(story.content)}</p>
-        <div class="story-meta">— Anonymous, ${date}</div>
+        <div class="story-meta">— Anonymous, ${submittedAt}</div>
       </div>
     `;
   }
