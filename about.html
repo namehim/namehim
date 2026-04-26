@@ -290,11 +290,16 @@
     </div>
   </footer>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
     function formatReportTotal(total) {
       const parsedTotal = Number(total) || 0;
       return parsedTotal.toLocaleString('en-US');
     }
+
+    const SUPABASE_URL = 'https://cmmggaprguusffiphegy.supabase.co';
+    const SUPABASE_ANON_KEY = 'sb_publishable_G9Doh6gciyFVT1NDum55ZA_8ryL3fOw';
+    const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     async function loadReportCount() {
       const reportCount = document.getElementById('report-count');
@@ -315,7 +320,23 @@
           throw new Error('Worker did not return an array');
         }
 
-        reportCount.textContent = formatReportTotal(reports.length) + ' reports and counting...';
+        let totalReports = reports.length;
+
+        try {
+          const { count, error: countError } = await supabaseClient
+            .from('reports')
+            .select('*', { count: 'exact', head: true });
+
+          if (countError) {
+            throw countError;
+          }
+
+          totalReports = Math.max(totalReports, Number(count) || 0);
+        } catch (countFallbackError) {
+          console.warn('Unable to fetch exact report count, using worker total:', countFallbackError);
+        }
+
+        reportCount.textContent = formatReportTotal(totalReports) + ' reports and counting...';
       } catch (error) {
         console.error('Failed to load report count:', error);
         reportCount.textContent = '0 reports and counting...';
