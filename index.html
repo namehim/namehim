@@ -1830,10 +1830,8 @@ function addStoryTimestamp() {
 }
 
     function startRealtimeUpdates() {
-  // Fetch new data every 30 seconds to keep the report list fresh
-  setInterval(() => {
-    loadReports();
-  }, 30000); // 30 seconds = 30,000 milliseconds
+  // Auto‑refresh removed to save Worker requests.
+  // The page will update when the user refreshes or submits a new report.
 }
 
     function refreshSimpleMap() {
