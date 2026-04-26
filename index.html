@@ -1523,6 +1523,36 @@ function addStoryTimestamp() {
       renderPagination(reports.length, currentPage);
     }
 
+
+    async function fetchAllReportsFromSupabase(batchSize = 1000) {
+      const collected = [];
+      let from = 0;
+
+      while (true) {
+        const to = from + batchSize - 1;
+        const { data, error } = await supabaseClient
+          .from('reports')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .range(from, to);
+
+        if (error) {
+          throw error;
+        }
+
+        const rows = Array.isArray(data) ? data : [];
+        collected.push(...rows);
+
+        if (rows.length < batchSize) {
+          break;
+        }
+
+        from += batchSize;
+      }
+
+      return collected;
+    }
+
     function applySearchFilter(options = {}) {
       const preservePage = Boolean(options.preservePage);
       const reportId = getReportIdFromUrl();
@@ -1587,7 +1617,25 @@ function addStoryTimestamp() {
       throw new Error('Worker did not return an array');
     }
 
-    allReports = reports;
+    let resolvedReports = reports;
+
+    try {
+      const { count, error: countError } = await supabaseClient
+        .from('reports')
+        .select('*', { count: 'exact', head: true });
+
+      if (countError) {
+        throw countError;
+      }
+
+      if ((Number(count) || 0) > reports.length) {
+        resolvedReports = await fetchAllReportsFromSupabase();
+      }
+    } catch (fallbackError) {
+      console.warn('Unable to compare/fallback report source, continuing with worker data:', fallbackError);
+    }
+
+    allReports = resolvedReports;
     window.allReports = allReports;
     hasLoadedReports = true;
     updateReportCount(allReports.length);
