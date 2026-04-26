@@ -257,7 +257,6 @@
     .row-actions {
       display: flex;
       gap: 0.45rem;
-      flex-wrap: wrap;
     }
 
     .report-timestamp {
@@ -501,7 +500,86 @@
   font-size: 0.8rem;
   color: var(--muted);
 }
-    
+
+
+.pill.other-category { background: #374151; color: #d1d5db; }
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.65);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+.modal-overlay.hidden { display: none !important; }
+
+.modal-box {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 0.8rem;
+  padding: 1.5rem;
+  width: 100%;
+  max-width: 520px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+.modal-box h3 { margin: 0 0 0.25rem 0; font-size: 1.1rem; }
+.modal-subtitle { font-size: 0.82rem; color: var(--muted); margin: 0 0 1rem 0; }
+
+.modal-cat-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+.modal-cat-grid .check.locked {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.modal-custom-section { margin-bottom: 1rem; }
+.modal-custom-section label { font-size: 0.88rem; color: #d1d5db; display: block; margin-bottom: 0.35rem; }
+.modal-custom-row {
+  display: flex;
+  gap: 0.5rem;
+}
+.modal-custom-row input { flex: 1; }
+.custom-cat-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+}
+.custom-cat-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  background: #374151;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.78rem;
+}
+.custom-cat-tag button {
+  border: none;
+  background: none;
+  color: #9ca3af;
+  cursor: pointer;
+  padding: 0;
+  font-size: 0.9rem;
+  line-height: 1;
+}
+.custom-cat-tag button:hover { color: var(--danger); background: none; }
+
+.modal-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  margin-top: 1rem;
+}
+
   </style>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
@@ -582,13 +660,47 @@
         <h2>Submit a Report</h2>
         <form id="report-form" class="panel" novalidate>
           <div class="row">
-            <label for="name">Name *</label>
-            <input id="name" type="text" required inputmode="text" />
+            <div class="grid">
+              <div>
+                <label for="first-name">First Name *</label>
+                <input id="first-name" type="text" required inputmode="text" maxlength="80" />
+              </div>
+              <div>
+                <label for="last-name">Last Name *</label>
+                <input id="last-name" type="text" required inputmode="text" maxlength="80" />
+              </div>
+            </div>
+            <div class="grid" style="margin-top:0.5rem;">
+              <div>
+                <label for="name-title">Title (optional)</label>
+                <select id="name-title">
+                  <option value="">None</option>
+                  <option value="Dr.">Dr.</option>
+                  <option value="Mr.">Mr.</option>
+                  <option value="Mrs.">Mrs.</option>
+                  <option value="Ms.">Ms.</option>
+                  <option value="Prof.">Prof.</option>
+                  <option value="Rev.">Rev.</option>
+                </select>
+              </div>
+              <div>
+                <label for="name-suffix">Suffix (optional)</label>
+                <select id="name-suffix">
+                  <option value="">None</option>
+                  <option value="Jr.">Jr.</option>
+                  <option value="Sr.">Sr.</option>
+                  <option value="II">II</option>
+                  <option value="III">III</option>
+                  <option value="IV">IV</option>
+                  <option value="Esq.">Esq.</option>
+                </select>
+              </div>
+            </div>
           </div>
 
           <div class="row">
             <label for="city">City *</label>
-            <input id="city" type="text" required inputmode="text" />
+            <input id="city" type="text" required inputmode="text" maxlength="80" />
           </div>
 
           <div class="row">
@@ -796,12 +908,20 @@
 
           <div id="state-field-container" class="row">
             <label for="state">State / Province (optional)</label>
-            <input id="state" type="text" placeholder="State / Province (optional)" inputmode="text" />
+            <input id="state" type="text" placeholder="State / Province (optional)" inputmode="text" maxlength="80" />
           </div>
 
           <fieldset>
             <legend>Categories *</legend>
             <div class="checkboxes" id="category-checkboxes"></div>
+            <div class="modal-custom-section" style="margin-top:0.75rem;">
+              <label for="submit-custom-cat-input" style="font-size:0.88rem;color:#d1d5db;display:block;margin-bottom:0.35rem;">Custom category (optional)</label>
+              <div class="modal-custom-row">
+                <input type="text" id="submit-custom-cat-input" placeholder="e.g. gaslighting" maxlength="60" autocomplete="off">
+                <button type="button" id="submit-custom-cat-add-btn">Add</button>
+              </div>
+              <div class="custom-cat-tags" id="submit-custom-cat-tags"></div>
+            </div>
           </fieldset>
 
           <div class="row">
@@ -860,6 +980,27 @@
       <span>Open source</span>
     </div>
   </footer>
+
+  <div id="add-cat-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="add-cat-modal-title">
+    <div class="modal-box">
+      <h3 id="add-cat-modal-title">Add categories</h3>
+      <p class="modal-subtitle" id="add-cat-modal-subtitle"></p>
+      <div id="add-cat-checkboxes" class="modal-cat-grid"></div>
+      <div class="modal-custom-section">
+        <label for="custom-cat-input">Custom category</label>
+        <div class="modal-custom-row">
+          <input type="text" id="custom-cat-input" placeholder="e.g. gaslighting" maxlength="60" autocomplete="off">
+          <button type="button" id="custom-cat-add-btn">Add</button>
+        </div>
+        <div class="custom-cat-tags" id="custom-cat-tags"></div>
+      </div>
+      <div id="add-cat-message" class="message"></div>
+      <div class="modal-actions">
+        <button type="button" id="add-cat-cancel-btn">Cancel</button>
+        <button type="button" id="add-cat-submit-btn" class="primary">Save</button>
+      </div>
+    </div>
+  </div>
 
   <script>
     const routes = {
@@ -1114,7 +1255,8 @@ function filterReportsByState(stateFullName) {
     window.filterReportsByCountry = filterReportsByCountry;
     
     function getCategoryClass(category) {
-      return category.replace(/\s+/g, '-');
+      const cls = category.replace(/\s+/g, '-');
+      return CATEGORIES.includes(category) ? cls : 'other-category';
     }
 
     function renderCategories() {
@@ -1423,7 +1565,8 @@ function addStoryTimestamp() {
     }
 
     function bindNoNumberFields() {
-      preventNumbersForField(document.getElementById('name'));
+      preventNumbersForField(document.getElementById('first-name'));
+      preventNumbersForField(document.getElementById('last-name'));
       preventNumbersForField(document.getElementById('city'));
       const stateField = document.getElementById('state');
       if (stateField && stateField.tagName === 'INPUT') {
@@ -1451,7 +1594,7 @@ function addStoryTimestamp() {
 
       stateFieldContainer.innerHTML = `
         <label for="state">State / Province (optional)</label>
-        <input type="text" id="state" placeholder="State / Province (optional)" inputmode="text">
+        <input type="text" id="state" placeholder="State / Province (optional)" inputmode="text" maxlength="80">
       `;
 
       bindNoNumberFields();
@@ -1489,6 +1632,7 @@ function addStoryTimestamp() {
           <td data-label="Categories"><div class="pills">${pillHTML}</div></td>
           <td data-label="Actions">
             <div class="row-actions">
+              <button type="button" class="add-cat-btn" data-report-id="${escapeHTML(report.id || '')}">Add Categories</button>
               <button type="button" class="report-entry-btn" data-report-id="${escapeHTML(report.id || '')}">Report this entry</button>
               <button type="button" class="report-share-btn" data-report-id="${escapeHTML(report.id || '')}">Share</button>
             </div>
@@ -1741,9 +1885,49 @@ function addStoryTimestamp() {
       }
     }
 
+    let _submitCustomCats = [];
+
     function getSelectedCategories() {
-      return Array.from(document.querySelectorAll('input[name="categories"]:checked'))
+      const checked = Array.from(document.querySelectorAll('input[name="categories"]:checked'))
         .map((input) => input.value);
+      return Array.from(new Set([...checked, ..._submitCustomCats]));
+    }
+
+    function renderSubmitCustomCatTags() {
+      const container = document.getElementById('submit-custom-cat-tags');
+      if (!container) return;
+      container.innerHTML = _submitCustomCats.map((cat, i) =>
+        `<span class="custom-cat-tag">${escapeHTML(toTitleCase(cat))}
+          <button type="button" data-idx="${i}" aria-label="Remove">×</button>
+        </span>`
+      ).join('');
+    }
+
+    function initSubmitCustomCats() {
+      const input = document.getElementById('submit-custom-cat-input');
+      const addBtn = document.getElementById('submit-custom-cat-add-btn');
+      const tags = document.getElementById('submit-custom-cat-tags');
+      if (!input || !addBtn || !tags) return;
+
+      function addCat() {
+        const val = input.value.trim().toLowerCase();
+        if (!val || _submitCustomCats.includes(val) || CATEGORIES.includes(val)) {
+          input.value = '';
+          return;
+        }
+        _submitCustomCats.push(val);
+        input.value = '';
+        renderSubmitCustomCatTags();
+      }
+
+      addBtn.addEventListener('click', addCat);
+      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addCat(); } });
+      tags.addEventListener('click', (e) => {
+        const btn = e.target.closest('button[data-idx]');
+        if (!btn) return;
+        _submitCustomCats.splice(parseInt(btn.dataset.idx, 10), 1);
+        renderSubmitCustomCatTags();
+      });
     }
 
     function openStoryForm() {
@@ -1822,8 +2006,13 @@ function addStoryTimestamp() {
         return;
       }
 
+      const firstName = document.getElementById('first-name').value.trim();
+      const lastName = document.getElementById('last-name').value.trim();
+      const nameTitle = document.getElementById('name-title').value;
+      const nameSuffix = document.getElementById('name-suffix').value;
+
       const payload = {
-        name: document.getElementById('name').value.trim(),
+        name: [nameTitle, firstName, lastName, nameSuffix].filter(Boolean).join(' '),
         city: document.getElementById('city').value.trim(),
         state: document.getElementById('state').value.trim() || null,
         country: document.getElementById('country').value.trim(),
@@ -1831,13 +2020,13 @@ function addStoryTimestamp() {
         submitter_uuid: getOrCreateSubmitterId()    // <-- CRITICAL FIX
       };
 
-      if (!payload.name || !payload.city || !payload.country) {
-        submitMessage.textContent = 'Please fill in Name, City, and Country.';
+      if (!firstName || !lastName || !payload.city || !payload.country) {
+        submitMessage.textContent = 'Please fill in First Name, Last Name, City, and Country.';
         submitMessage.className = 'message error';
         return;
       }
 
-      if (hasNumber(payload.name) || hasNumber(payload.city) || hasNumber(payload.state)) {
+      if (hasNumber(firstName) || hasNumber(lastName) || hasNumber(payload.city) || hasNumber(payload.state)) {
         submitMessage.textContent = 'Numbers are not allowed in Name, City, or State / Province.';
         submitMessage.className = 'message error';
         return;
@@ -1868,6 +2057,8 @@ function addStoryTimestamp() {
       addSubmissionTimestamp();
       updateRateLimitUI();
       reportForm.reset();
+      _submitCustomCats = [];
+      renderSubmitCustomCatTags();
       renderStateField();
       populateBrowseStateSelect();
       resetTurnstileWidget();
@@ -1881,6 +2072,14 @@ function addStoryTimestamp() {
 
     async function setupReportActionHandler() {
   reportsBody.addEventListener('click', async function onTableClick(event) {
+    const addBtn = event.target.closest('.add-cat-btn');
+    if (addBtn) {
+      const reportId = addBtn.getAttribute('data-report-id');
+      const report = allReports.find((r) => String(r.id) === reportId);
+      if (report) openAddCategoriesModal(reportId, Array.isArray(report.categories) ? report.categories : []);
+      return;
+    }
+
     const shareButton = event.target.closest('.report-share-btn');
     if (shareButton) {
       const sharedReportId = shareButton.getAttribute('data-report-id');
@@ -1982,6 +2181,122 @@ function addStoryTimestamp() {
         const isVisible = mapContainer.style.display !== 'none';
         setMapVisibility(!isVisible);
       });
+    }
+
+    // --- Add Categories Modal ---
+    let _addCatReportId = null;
+    let _addCatExisting = [];
+    let _pendingCustomCats = [];
+
+    const addCatModal = document.getElementById('add-cat-modal');
+    const addCatCheckboxes = document.getElementById('add-cat-checkboxes');
+    const addCatSubtitle = document.getElementById('add-cat-modal-subtitle');
+    const addCatMessage = document.getElementById('add-cat-message');
+    const customCatInput = document.getElementById('custom-cat-input');
+    const customCatTags = document.getElementById('custom-cat-tags');
+    const customCatAddBtn = document.getElementById('custom-cat-add-btn');
+    const addCatSubmitBtn = document.getElementById('add-cat-submit-btn');
+    const addCatCancelBtn = document.getElementById('add-cat-cancel-btn');
+
+    function openAddCategoriesModal(reportId, existingCategories) {
+      _addCatReportId = reportId;
+      _addCatExisting = existingCategories.map((c) => String(c).toLowerCase().trim());
+      _pendingCustomCats = [];
+      addCatMessage.textContent = '';
+      addCatMessage.className = 'message';
+      customCatInput.value = '';
+
+      const report = allReports.find((r) => String(r.id) === String(reportId));
+      addCatSubtitle.textContent = report ? report.name : '';
+
+      addCatCheckboxes.innerHTML = CATEGORIES.map((cat) => {
+        const isLocked = _addCatExisting.includes(cat);
+        const lockedAttr = isLocked ? ' disabled checked' : '';
+        const lockedClass = isLocked ? ' locked' : '';
+        return `<label class="check${lockedClass}">
+          <input type="checkbox" name="add-cat" value="${escapeHTML(cat)}"${lockedAttr}>
+          ${escapeHTML(toTitleCase(cat))}
+        </label>`;
+      }).join('');
+
+      renderCustomCatTags();
+      addCatModal.classList.remove('hidden');
+      customCatInput.focus();
+    }
+
+    function closeAddCategoriesModal() {
+      addCatModal.classList.add('hidden');
+      _addCatReportId = null;
+    }
+
+    function renderCustomCatTags() {
+      customCatTags.innerHTML = _pendingCustomCats.map((cat, i) =>
+        `<span class="custom-cat-tag">${escapeHTML(toTitleCase(cat))}
+          <button type="button" data-idx="${i}" aria-label="Remove">×</button>
+        </span>`
+      ).join('');
+    }
+
+    function addPendingCustomCat() {
+      const val = customCatInput.value.trim().toLowerCase();
+      if (!val) return;
+      if (_addCatExisting.includes(val) || _pendingCustomCats.includes(val) || CATEGORIES.includes(val)) {
+        customCatInput.value = '';
+        return;
+      }
+      _pendingCustomCats.push(val);
+      customCatInput.value = '';
+      renderCustomCatTags();
+    }
+
+    async function handleAddCategories() {
+      const checked = Array.from(addCatCheckboxes.querySelectorAll('input[name="add-cat"]:checked:not(:disabled)'))
+        .map((el) => el.value);
+
+      if (!checked.length && !_pendingCustomCats.length) {
+        addCatMessage.textContent = 'Select or add at least one new category.';
+        addCatMessage.className = 'message error';
+        return;
+      }
+
+      const merged = Array.from(new Set([..._addCatExisting, ...checked, ..._pendingCustomCats]));
+
+      addCatSubmitBtn.disabled = true;
+      addCatMessage.textContent = '';
+
+      const { error } = await supabaseClient
+        .from('reports')
+        .update({ categories: merged })
+        .eq('id', parseInt(_addCatReportId, 10));
+
+      addCatSubmitBtn.disabled = false;
+
+      if (error) {
+        addCatMessage.textContent = 'Failed to save. Please try again.';
+        addCatMessage.className = 'message error';
+        return;
+      }
+
+      const idx = allReports.findIndex((r) => String(r.id) === String(_addCatReportId));
+      if (idx !== -1) allReports[idx].categories = merged;
+
+      closeAddCategoriesModal();
+      applySearchFilter({ preservePage: true });
+    }
+
+    function initAddCategoriesModal() {
+      customCatAddBtn.addEventListener('click', addPendingCustomCat);
+      customCatInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addPendingCustomCat(); } });
+      customCatTags.addEventListener('click', (e) => {
+        const btn = e.target.closest('button[data-idx]');
+        if (!btn) return;
+        _pendingCustomCats.splice(parseInt(btn.dataset.idx, 10), 1);
+        renderCustomCatTags();
+      });
+      addCatCancelBtn.addEventListener('click', closeAddCategoriesModal);
+      addCatModal.addEventListener('click', (e) => { if (e.target === addCatModal) closeAddCategoriesModal(); });
+      addCatSubmitBtn.addEventListener('click', handleAddCategories);
+      document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeAddCategoriesModal(); });
     }
 
     function init() {
@@ -2102,6 +2417,8 @@ function addStoryTimestamp() {
       if (showStoryFormBtn) {
         showStoryFormBtn.addEventListener('click', openStoryForm);
       }
+      initSubmitCustomCats();
+      initAddCategoriesModal();
     }
 
    // --- World Map Toggle (similar to US Map) ---
