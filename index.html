@@ -1218,7 +1218,8 @@ function filterReportsByState(stateFullName) {
       setBrowseTitleForSingleReport(null);
     }
 
-    function updateBrowseViewFromRoute() {
+    function updateBrowseViewFromRoute(options = {}) {
+      const preserveBrowsePage = Boolean(options.preserveBrowsePage);
       const route = getCurrentRoute();
       if (route !== '#/browse') {
         activeSingleReportId = null;
@@ -1232,7 +1233,7 @@ function filterReportsByState(stateFullName) {
         activeSingleReportId = null;
         setSingleReportControlsVisible(false);
         setBrowseTitleForSingleReport(null);
-        applySearchFilter();
+        applySearchFilter({ preservePage: preserveBrowsePage });
         return;
       }
 
@@ -1474,7 +1475,8 @@ function addStoryTimestamp() {
       renderPagination(reports.length, currentPage);
     }
 
-    function applySearchFilter() {
+    function applySearchFilter(options = {}) {
+      const preservePage = Boolean(options.preservePage);
       const reportId = getReportIdFromUrl();
       if (getCurrentRoute() === '#/browse' && reportId) {
         const matched = allReports.find((report) => String(report.id) === reportId);
@@ -1505,7 +1507,7 @@ function addStoryTimestamp() {
       });
 
       if (!query && !selectedCountry && !selectedState) {
-        renderPagedReports(filtered, 1);
+        renderPagedReports(filtered, preservePage ? currentPage : 1);
         browseMessage.textContent = filtered.length
           ? 'Loaded ' + allReports.length + ' report(s). Showing up to ' + REPORTS_PER_PAGE + ' per page.'
           : 'No reports yet. Be the first to submit.';
@@ -1513,7 +1515,7 @@ function addStoryTimestamp() {
         return;
       }
 
-      renderPagedReports(filtered, 1);
+      renderPagedReports(filtered, preservePage ? currentPage : 1);
       browseMessage.textContent = filtered.length
         ? 'Showing ' + filtered.length + ' of ' + allReports.length + ' report(s), ' + REPORTS_PER_PAGE + ' per page.'
         : 'No matching reports found.';
@@ -1541,7 +1543,7 @@ function addStoryTimestamp() {
     window.allReports = allReports;
     hasLoadedReports = true;
     updateReportCount(allReports.length);
-    updateBrowseViewFromRoute();
+    updateBrowseViewFromRoute({ preserveBrowsePage: true });
     browseMessage.textContent = allReports.length
       ? `Loaded ${allReports.length} report(s).`
       : 'No reports yet. Be the first to submit.';
