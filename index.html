@@ -799,7 +799,7 @@
               <option value="United Arab Emirates">United Arab Emirates</option>
               <option value="United Kingdom">United Kingdom</option>
               <option value="United Republic of Tanzania">United Republic of Tanzania</option>
-              <option value="United States of America">United States of America</option>
+              <option value="USA">USA</option>
               <option value="Uruguay">Uruguay</option>
               <option value="Uzbekistan">Uzbekistan</option>
               <option value="Vanuatu">Vanuatu</option>
@@ -1102,6 +1102,7 @@
     const COUNTRY_FILTER_ALIASES = {
       'united states': 'united states',
       'united states america': 'united states',
+      'united states ame': 'united states',
       'u s': 'united states',
       'u s a': 'united states',
       usa: 'united states',
@@ -1146,7 +1147,8 @@
 
       const uniqueByNormalized = new Map();
       const addCountryOption = (rawValue) => {
-        const value = String(rawValue || '').trim();
+        const sourceValue = String(rawValue || '').trim();
+        const value = isUnitedStatesCountryValue(sourceValue) ? 'USA' : sourceValue;
         if (!value) {
           return;
         }
@@ -1232,6 +1234,14 @@
     }
 
     window.setCountryDropdownValue = setCountryDropdownValue;
+
+    function clearBrowseLocationDropdownValues() {
+      setCountryDropdownValue('');
+      setStateDropdownValue('');
+      updateBrowseLocationFiltersUI();
+    }
+
+    window.clearBrowseLocationDropdownValues = clearBrowseLocationDropdownValues;
 
 function filterReportsByState(stateFullName) {
   const searchInput = document.getElementById('report-search');
@@ -1680,7 +1690,7 @@ function addStoryTimestamp() {
     function renderStateField() {
       const selectedCountry = (countryField.value || '').trim();
 
-      if (selectedCountry === 'United States of America') {
+      if (isUnitedStatesCountryValue(selectedCountry)) {
         const stateOptions = US_STATES
           .map((state) => '<option value="' + escapeHTML(state) + '">' + escapeHTML(state) + '</option>')
           .join('');
@@ -2346,34 +2356,43 @@ function addStoryTimestamp() {
       if (browseStateSelect) {
         browseStateSelect.addEventListener('change', function onStateSelectChange() {
           const selectedState = browseStateSelect.value;
+          if (typeof window.clearSelectedMapState === 'function') {
+            window.clearSelectedMapState();
+          }
+          if (typeof window.clearSelectedWorldCountry === 'function') {
+            window.clearSelectedWorldCountry();
+          }
           if (!selectedState) {
-            if (typeof window.clearSelectedMapState === 'function') {
-              window.clearSelectedMapState();
-            }
             reportSearch.value = '';
             applySearchFilter();
             return;
           }
 
-          if (typeof window.selectStateOnMapByName === 'function') {
-            window.selectStateOnMapByName(selectedState);
-          } else {
-            filterReportsByState(selectedState);
-          }
+          filterReportsByState(selectedState);
         });
       }
       if (browseCountrySelect) {
         browseCountrySelect.addEventListener('change', function onCountrySelectChange() {
-          if (browseCountrySelect.value === '' && typeof window.clearSelectedWorldCountry === 'function') {
+          if (typeof window.clearSelectedMapState === 'function') {
+            window.clearSelectedMapState();
+          }
+          if (typeof window.clearSelectedWorldCountry === 'function') {
             window.clearSelectedWorldCountry();
           }
           updateBrowseLocationFiltersUI();
           applySearchFilter();
-          if (typeof window.refreshWorldMapReportData === 'function') {
-            window.refreshWorldMapReportData();
-          }
         });
       }
+      window.filterReportsByStateFromMap = function filterReportsByStateFromMap(stateFullName) {
+        clearBrowseLocationDropdownValues();
+        filterReportsByState(stateFullName);
+      };
+
+      window.filterReportsByCountryFromMap = function filterReportsByCountryFromMap(countryName) {
+        clearBrowseLocationDropdownValues();
+        reportSearch.value = String(countryName || '').trim();
+        applySearchFilter();
+      };
       browsePagination.addEventListener('click', function onPaginationClick(event) {
         const target = event.target.closest('button');
         if (!target) {
@@ -2471,6 +2490,10 @@ function initWorldMapToggle() {
 
 function initWorldMapInteractions() {
   window.applyCountryFilterFromWorldMap = function applyCountryFilterFromWorldMap(countryName) {
+    if (typeof window.filterReportsByCountryFromMap === 'function') {
+      window.filterReportsByCountryFromMap(countryName);
+      return;
+    }
     filterReportsByCountry(countryName);
   };
 }
@@ -2548,9 +2571,11 @@ function applyWorldMapSelectionById(stateId, shouldFilter) {
 
   const countryName = getWorldMapCountryDisplayName(selectedWorldCountryId);
   if (shouldFilter) {
-    filterReportsByCountry(countryName);
-  } else {
-    setCountryDropdownValue(countryName);
+    if (typeof window.filterReportsByCountryFromMap === 'function') {
+      window.filterReportsByCountryFromMap(countryName);
+    } else {
+      filterReportsByCountry(countryName);
+    }
   }
 }
 
@@ -2598,18 +2623,10 @@ function attachWorldMapHooks() {
 
 function syncWorldMapWithCurrentFilters() {
   updateWorldMapStateDescriptions();
-
-  const selectedCountry = String((browseCountrySelect && browseCountrySelect.value) || '').trim();
-  const stateId = getWorldCountryIdByName(selectedCountry);
-  if (!stateId) {
-    if (selectedWorldCountryId) {
-      setWorldCountryFill(selectedWorldCountryId, WORLD_MAP_DEFAULT_COLOR);
-    }
-    selectedWorldCountryId = null;
-    return;
+  if (selectedWorldCountryId) {
+    setWorldCountryFill(selectedWorldCountryId, WORLD_MAP_DEFAULT_COLOR);
   }
-
-  applyWorldMapSelectionById(stateId, false);
+  selectedWorldCountryId = null;
 }
 
 window.clearSelectedWorldCountry = function clearSelectedWorldCountry() {
