@@ -1565,7 +1565,7 @@ function addStoryTimestamp() {
       if (!normalized) {
         return false;
       }
-      return !/^[\p{L}\s]+$/u.test(normalized);
+      return !/^[A-Za-z\s]+$/.test(normalized);
     }
 
     function preventInvalidCharsForField(fieldElement) {
@@ -1576,7 +1576,7 @@ function addStoryTimestamp() {
       fieldElement.dataset.lettersOnlyBound = 'true';
       fieldElement.addEventListener('input', () => {
         const cleanedValue = fieldElement.value
-          .replace(/[^\p{L}\s]+/gu, '')
+          .replace(/[^A-Za-z\s]+/g, '')
           .replace(/\s+/g, ' ')
           .trimStart();
         if (cleanedValue !== fieldElement.value) {
@@ -2070,7 +2070,7 @@ function addStoryTimestamp() {
         hasInvalidLettersOnlyChars(payload.city) ||
         (shouldValidateStateInput && hasInvalidLettersOnlyChars(payload.state))
       ) {
-        submitMessage.textContent = '* Name and Location can only contain letters.';
+        submitMessage.textContent = '* Name and Location can only contain English letters (A-Z).';
         submitMessage.className = 'message error';
         return;
       }
