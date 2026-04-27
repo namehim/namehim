@@ -1194,9 +1194,15 @@
         addCountryOption(option.value || option.textContent);
       });
 
-      const sortedCountries = Array.from(uniqueByNormalized.values()).sort((a, b) =>
-        a.localeCompare(b, undefined, { sensitivity: 'base' })
-      );
+      const sortedCountries = Array.from(uniqueByNormalized.values()).sort((a, b) => {
+        const normalizedA = normalizeCountryForFiltering(a);
+        const normalizedB = normalizeCountryForFiltering(b);
+        const normalizedComparison = normalizedA.localeCompare(normalizedB, undefined, { sensitivity: 'base' });
+        if (normalizedComparison !== 0) {
+          return normalizedComparison;
+        }
+        return a.localeCompare(b, undefined, { sensitivity: 'base' });
+      });
 
       const countryOptions = sortedCountries
         .map((value) => {
