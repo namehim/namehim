@@ -922,6 +922,10 @@
     const MAP_VISIBILITY_STORAGE_KEY = 'namehim_us_map_visible';
     const browsePagination = document.getElementById('browse-pagination');
     const REPORTS_PER_PAGE = 100;
+    const MAX_REPORT_FIELD_LENGTH = 80;
+    const MAX_CATEGORY_LENGTH = 40;
+    const MAX_CATEGORY_COUNT = 8;
+    const MAX_CATEGORY_TOTAL_CHARS = 240;
     const DEFAULT_PAGE_TITLE = document.title || 'NameHim';
     const storyForm = document.getElementById('story-form');
     const showStoryFormBtn = document.getElementById('show-story-form-btn');
@@ -978,6 +982,60 @@
           '"': '&quot;'
         }[char];
       });
+    }
+
+    function normalizeWhitespace(value) {
+      return String(value || '')
+        .replace(/[\u0000-\u001f\u007f]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+
+    function sanitizeReportText(value, maxLength) {
+      const normalized = normalizeWhitespace(value);
+      if (!normalized) {
+        return '';
+      }
+      return normalized.slice(0, maxLength);
+    }
+
+    function sanitizeCategoryList(rawCategories) {
+      if (!Array.isArray(rawCategories)) {
+        return [];
+      }
+
+      const seen = new Set();
+      const cleaned = [];
+      let totalChars = 0;
+      for (let i = 0; i < rawCategories.length; i += 1) {
+        const category = sanitizeReportText(rawCategories[i], MAX_CATEGORY_LENGTH).toLowerCase();
+        if (!category || seen.has(category)) {
+          continue;
+        }
+        totalChars += category.length;
+        if (cleaned.length >= MAX_CATEGORY_COUNT || totalChars > MAX_CATEGORY_TOTAL_CHARS) {
+          break;
+        }
+        seen.add(category);
+        cleaned.push(category);
+      }
+      return cleaned;
+    }
+
+    function sanitizeFetchedReports(rows) {
+      if (!Array.isArray(rows)) {
+        return [];
+      }
+
+      return rows.map((report) => ({
+        id: Number(report && report.id) || 0,
+        name: sanitizeReportText(report && report.name, MAX_REPORT_FIELD_LENGTH),
+        city: sanitizeReportText(report && report.city, MAX_REPORT_FIELD_LENGTH),
+        state: sanitizeReportText(report && report.state, MAX_REPORT_FIELD_LENGTH),
+        country: sanitizeReportText(report && report.country, MAX_REPORT_FIELD_LENGTH),
+        categories: sanitizeCategoryList(report && report.categories),
+        created_at: sanitizeReportText(report && report.created_at, 64),
+      }));
     }
 
     function toTitleCase(value) {
@@ -1747,7 +1805,7 @@ function addStoryTimestamp() {
       throw error;
     }
 
-    allReports = data || [];
+    allReports = sanitizeFetchedReports(data || []);
     window.allReports = allReports;
     hasLoadedReports = true;
     updateReportCount(allReports.length);
@@ -1957,10 +2015,10 @@ function addStoryTimestamp() {
       }
 
       const payload = {
-        name: document.getElementById('name').value.trim().slice(0, MAX_BROWSE_FIELD_LENGTH),
-        city: document.getElementById('city').value.trim().slice(0, MAX_BROWSE_FIELD_LENGTH),
-        state: document.getElementById('state').value.trim().slice(0, MAX_BROWSE_FIELD_LENGTH) || null,
-        country: document.getElementById('country').value.trim(),
+        name: sanitizeReportText(document.getElementById('name').value, MAX_BROWSE_FIELD_LENGTH),
+        city: sanitizeReportText(document.getElementById('city').value, MAX_BROWSE_FIELD_LENGTH),
+        state: sanitizeReportText(document.getElementById('state').value, MAX_BROWSE_FIELD_LENGTH) || null,
+        country: sanitizeReportText(document.getElementById('country').value, MAX_BROWSE_FIELD_LENGTH),
         categories: getSelectedCategories(),
         submitter_uuid: getOrCreateSubmitterId()    // <-- CRITICAL FIX
       };
@@ -1979,6 +2037,13 @@ function addStoryTimestamp() {
 
       if (!payload.categories.length) {
         submitMessage.textContent = 'Please select at least one category.';
+        submitMessage.className = 'message error';
+        return;
+      }
+
+      payload.categories = sanitizeCategoryList(payload.categories);
+      if (!payload.categories.length) {
+        submitMessage.textContent = 'Please select valid categories.';
         submitMessage.className = 'message error';
         return;
       }
