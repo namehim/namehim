@@ -1753,7 +1753,7 @@ function addStoryTimestamp() {
         const to = from + batchSize - 1;
         const { data, error } = await supabaseClient
           .from('reports')
-          .select('*')
+          .select('id,name,city,state,country,categories,created_at')
           .order('created_at', { ascending: false })
           .range(from, to);
 
@@ -1824,19 +1824,12 @@ function addStoryTimestamp() {
     async function loadReports() {
   browseMessage.textContent = 'Loading reports...';
   browseMessage.className = 'message';
+  startReportCountLoadingAnimation();
 
   try {
-    // Direct Supabase query – no worker involved
-    const { data, error } = await supabaseClient
-      .from('reports')
-      .select('id,name,city,state,country,categories,created_at')
-      .order('created_at', { ascending: false });
+    const reports = await fetchAllReportsFromSupabase(1000);
 
-    if (error) {
-      throw error;
-    }
-
-    allReports = sanitizeFetchedReports(data || []);
+    allReports = sanitizeFetchedReports(reports || []);
     window.allReports = allReports;
     hasLoadedReports = true;
     updateReportCount(allReports.length);
@@ -1846,7 +1839,7 @@ function addStoryTimestamp() {
       : 'No reports yet. Be the first to submit.';
     browseMessage.className = 'message';
   } catch (error) {
-    console.error('Failed to load reports directly from Supabase:', error);
+    console.error('Failed to load reports from Supabase:', error);
     browseMessage.textContent = 'Unable to load reports right now. Please try again in a moment.';
     browseMessage.className = 'message error';
     allReports = [];
@@ -1854,6 +1847,8 @@ function addStoryTimestamp() {
     hasLoadedReports = true;
     updateReportCount(0);
     renderPagedReports([], 1);
+  } finally {
+    stopReportCountLoadingAnimation();
   }
 }
 
