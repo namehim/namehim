@@ -1855,20 +1855,8 @@ function addStoryTimestamp() {
       browseMessage.className = 'message';
       startReportCountLoadingAnimation();
 
-      const WORKER_URL = 'https://api.namehim.app/filtered-reports';
-
       try {
-        const response = await fetch(WORKER_URL);
-        if (!response.ok) {
-          throw new Error(`Worker returned ${response.status}`);
-        }
-        const reports = await response.json();
-
-        if (!Array.isArray(reports)) {
-          throw new Error('Worker did not return an array');
-        }
-
-        // Sanitize the reports (keep your existing sanitization logic)
+        const reports = await fetchAllReportsFromSupabase();
         allReports = sanitizeFetchedReports(reports);
         window.allReports = allReports;
         hasLoadedReports = true;
@@ -1879,7 +1867,7 @@ function addStoryTimestamp() {
           : 'No reports yet. Be the first to submit.';
         browseMessage.className = 'message';
       } catch (error) {
-        console.error('Failed to load reports via Worker:', error);
+        console.error('Failed to load reports from Supabase:', error);
         browseMessage.textContent = 'Unable to load reports right now. Please try again in a moment.';
         browseMessage.className = 'message error';
         allReports = [];
