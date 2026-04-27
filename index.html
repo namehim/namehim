@@ -2027,6 +2027,7 @@ function addStoryTimestamp() {
       submitMessage.textContent = '';
       submitMessage.className = 'message';
       turnstileWarning.classList.add('hidden');
+      if (true) return void (submitMessage.textContent = 'Submissions are temporarily disabled.');
 
       if (updateRateLimitUI()) {
         submitMessage.textContent = 'Rate limit reached. Please wait before submitting again.';
