@@ -922,7 +922,6 @@
     const MAP_VISIBILITY_STORAGE_KEY = 'namehim_us_map_visible';
     const browsePagination = document.getElementById('browse-pagination');
     const REPORTS_PER_PAGE = 100;
-    const MAX_REPORT_FIELD_LENGTH = 80;
     const MAX_CATEGORY_LENGTH = 40;
     const MAX_CATEGORY_COUNT = 8;
     const MAX_CATEGORY_TOTAL_CHARS = 240;
@@ -999,6 +998,17 @@
       return normalized.slice(0, maxLength);
     }
 
+    function sanitizeLettersOnlyText(value, maxLength) {
+      const normalized = sanitizeReportText(value, maxLength);
+      if (!normalized) {
+        return '';
+      }
+      return normalized
+        .replace(/[^A-Za-z\s]+/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+
     function sanitizeCategoryList(rawCategories) {
       if (!Array.isArray(rawCategories)) {
         return [];
@@ -1060,10 +1070,10 @@
 
       return rows.map((report) => ({
         id: Number(report && report.id) || 0,
-        name: sanitizeReportText(report && report.name, MAX_REPORT_FIELD_LENGTH),
-        city: sanitizeReportText(report && report.city, MAX_REPORT_FIELD_LENGTH),
-        state: sanitizeReportText(report && report.state, MAX_REPORT_FIELD_LENGTH),
-        country: sanitizeReportText(report && report.country, MAX_REPORT_FIELD_LENGTH),
+        name: sanitizeLettersOnlyText(report && report.name, MAX_BROWSE_FIELD_LENGTH),
+        city: sanitizeLettersOnlyText(report && report.city, MAX_BROWSE_FIELD_LENGTH),
+        state: sanitizeLettersOnlyText(report && report.state, MAX_BROWSE_FIELD_LENGTH),
+        country: sanitizeLettersOnlyText(report && report.country, MAX_BROWSE_FIELD_LENGTH),
         categories: sanitizeCategoryList(report && report.categories),
         created_at: sanitizeReportText(report && report.created_at, 64),
       }));
