@@ -496,6 +496,11 @@
   margin: 0 0 0.5rem 0;
   color: var(--accent);
 }
+.story-actions {
+  margin-top: 0.75rem;
+  display: flex;
+  justify-content: flex-end;
+}
 .story-meta {
   margin-top: 0.5rem;
   font-size: 0.8rem;
@@ -842,7 +847,10 @@
   </form>
   <p id="story-message" class="message"></p>
 
-  <h3 style="margin-top: 2rem;">Approved stories</h3>
+  <div id="single-story-controls" class="single-report-controls hidden" style="margin-top: 2rem;">
+    <button id="back-to-all-stories" type="button">← Back to all approved posts</button>
+  </div>
+  <h3 id="approved-stories-heading" style="margin-top: 2rem;">Approved stories</h3>
   <div id="stories-container" class="stories-grid">
     <p>Loading stories...</p>
   </div>
@@ -922,6 +930,9 @@
     const storyTurnstileWarning = document.getElementById('story-turnstile-warning');
     const storyRateWarning = document.getElementById('story-rate-warning');
     const storiesContainer = document.getElementById('stories-container');
+    const singleStoryControls = document.getElementById('single-story-controls');
+    const backToAllStoriesBtn = document.getElementById('back-to-all-stories');
+    const approvedStoriesHeading = document.getElementById('approved-stories-heading');
 
     const STORY_RATE_LIMIT_KEY = 'story_submission_timestamps';
 
@@ -942,6 +953,7 @@
     let currentFilteredReports = [];
     let currentPage = 1;
     let activeSingleReportId = null;
+    let activeSingleStoryId = null;
     let hasLoadedReports = false;
 
     // --- ADDED: submitter_uuid management (critical fix) ---
@@ -1149,6 +1161,17 @@ function filterReportsByState(stateFullName) {
       return reportId || null;
     }
 
+    function getStoryIdFromUrl() {
+      const hash = window.location.hash || '';
+      const queryString = hash.includes('?') ? hash.slice(hash.indexOf('?') + 1) : '';
+      if (!queryString) {
+        return null;
+      }
+      const params = new URLSearchParams(queryString);
+      const storyId = (params.get('post') || '').trim();
+      return storyId || null;
+    }
+
     function showToast(message) {
       let toast = document.getElementById('toast-message');
       if (!toast) {
@@ -1173,6 +1196,22 @@ function filterReportsByState(stateFullName) {
 
     async function copyShareLink(reportId) {
       const shareUrl = getShareUrl(reportId);
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+        showToast('Link copied to clipboard');
+      } catch (error) {
+        console.error('Clipboard write failed:', error);
+        showToast('Could not copy link');
+      }
+    }
+
+    function getStoryShareUrl(storyId) {
+      const safeId = encodeURIComponent(String(storyId || '').trim());
+      return window.location.origin + window.location.pathname + '#/community?post=' + safeId;
+    }
+
+    async function copyStoryShareLink(storyId) {
+      const shareUrl = getStoryShareUrl(storyId);
       try {
         await navigator.clipboard.writeText(shareUrl);
         showToast('Link copied to clipboard');
@@ -1277,7 +1316,7 @@ function filterReportsByState(stateFullName) {
   updateBrowseViewFromRoute();
 
   if (route === '#/community') {
-    loadApprovedStories();
+    updateCommunityViewFromRoute();
   }
 }
 
@@ -1725,13 +1764,52 @@ function addStoryTimestamp() {
   }
 }
 
-    async function loadApprovedStories() {
+    function setSingleStoryControlsVisible(visible) {
+      if (!singleStoryControls) {
+        return;
+      }
+      singleStoryControls.classList.toggle('hidden', !visible);
+    }
+
+    function setCommunityHeadingForSingleStory(story) {
+      if (!approvedStoriesHeading) {
+        return;
+      }
+      if (story) {
+        approvedStoriesHeading.textContent = 'Shared post';
+      } else {
+        approvedStoriesHeading.textContent = 'Approved stories';
+      }
+    }
+
+    function getStoryCardMarkup(story) {
+      const submittedAt = formatCommunityPostTimestamp(story.created_at);
+      const titleHtml = story.title ? `<h4>${escapeHTML(story.title)}</h4>` : '';
+      return `
+      <div class="story-card">
+        ${titleHtml}
+        <p>${escapeHTML(story.content)}</p>
+        <div class="story-meta">— Anonymous, ${submittedAt}</div>
+        <div class="story-actions">
+          <button type="button" class="story-share-btn" data-story-id="${escapeHTML(story.id || '')}">Share</button>
+        </div>
+      </div>
+    `;
+    }
+
+    async function loadApprovedStories(options = {}) {
+  const storyId = options.storyId || null;
   storiesContainer.innerHTML = '<p>Loading stories...</p>';
-  const { data, error } = await supabaseClient
+  let query = supabaseClient
     .from('stories')
     .select('id, title, content, created_at')
-    .eq('is_approved', true)
-    .order('created_at', { ascending: false });
+    .eq('is_approved', true);
+  if (storyId) {
+    query = query.eq('id', storyId).limit(1);
+  } else {
+    query = query.order('created_at', { ascending: false });
+  }
+  const { data, error } = await query;
 
   if (error) {
     storiesContainer.innerHTML = '<p>Error loading stories.</p>';
@@ -1739,24 +1817,41 @@ function addStoryTimestamp() {
   }
 
   if (!data.length) {
-    storiesContainer.innerHTML = '<p>No approved stories yet. Check back soon.</p>';
+    storiesContainer.innerHTML = storyId
+      ? '<p>Post not found. <a href="#/community">Back to all approved posts</a>.</p>'
+      : '<p>No approved stories yet. Check back soon.</p>';
     return;
   }
 
   let html = '';
   for (const story of data) {
-    const submittedAt = formatCommunityPostTimestamp(story.created_at);
-    const titleHtml = story.title ? `<h4>${escapeHTML(story.title)}</h4>` : '';
-    html += `
-      <div class="story-card">
-        ${titleHtml}
-        <p>${escapeHTML(story.content)}</p>
-        <div class="story-meta">— Anonymous, ${submittedAt}</div>
-      </div>
-    `;
+    html += getStoryCardMarkup(story);
   }
   storiesContainer.innerHTML = html;
 }
+
+    function updateCommunityViewFromRoute() {
+      if (getCurrentRoute() !== '#/community') {
+        activeSingleStoryId = null;
+        setSingleStoryControlsVisible(false);
+        setCommunityHeadingForSingleStory(null);
+        return;
+      }
+
+      const storyId = getStoryIdFromUrl();
+      if (!storyId) {
+        activeSingleStoryId = null;
+        setSingleStoryControlsVisible(false);
+        setCommunityHeadingForSingleStory(null);
+        loadApprovedStories();
+        return;
+      }
+
+      activeSingleStoryId = storyId;
+      setSingleStoryControlsVisible(true);
+      setCommunityHeadingForSingleStory({ id: storyId });
+      loadApprovedStories({ storyId });
+    }
 
     function getTurnstileToken() {
       const tokenField = document.querySelector('[name="cf-turnstile-response"]');
@@ -2130,6 +2225,23 @@ function addStoryTimestamp() {
       storyForm.addEventListener('submit', submitStory);
       if (showStoryFormBtn) {
         showStoryFormBtn.addEventListener('click', openStoryForm);
+      }
+      if (storiesContainer) {
+        storiesContainer.addEventListener('click', async function onStoryShareClick(event) {
+          const shareButton = event.target.closest('.story-share-btn');
+          if (!shareButton) {
+            return;
+          }
+          const storyId = shareButton.getAttribute('data-story-id');
+          if (storyId) {
+            await copyStoryShareLink(storyId);
+          }
+        });
+      }
+      if (backToAllStoriesBtn) {
+        backToAllStoriesBtn.addEventListener('click', function onBackToAllStoriesClick() {
+          window.location.hash = '#/community';
+        });
       }
     }
 
