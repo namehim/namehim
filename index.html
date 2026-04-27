@@ -2121,7 +2121,6 @@ function addStoryTimestamp() {
       submitMessage.textContent = '';
       submitMessage.className = 'message';
       turnstileWarning.classList.add('hidden');
-      
 
       if (updateRateLimitUI()) {
         submitMessage.textContent = 'Rate limit reached. Please wait before submitting again.';
@@ -2135,24 +2134,17 @@ function addStoryTimestamp() {
         return;
       }
 
-      const rawName = sanitizeReportText(document.getElementById('name').value, MAX_BROWSE_FIELD_LENGTH);
-      const rawCity = sanitizeReportText(document.getElementById('city').value, MAX_BROWSE_FIELD_LENGTH);
-      const rawState = sanitizeReportText(document.getElementById('state').value, MAX_BROWSE_FIELD_LENGTH);
-      const rawCountry = sanitizeReportText(document.getElementById('country').value, MAX_COUNTRY_LENGTH);
-      const cleanedName = sanitizeLettersOnlyText(rawName, MAX_BROWSE_FIELD_LENGTH);
-      const cleanedCity = sanitizeLettersOnlyText(rawCity, MAX_BROWSE_FIELD_LENGTH);
-      const cleanedState = sanitizeLettersOnlyText(rawState, MAX_BROWSE_FIELD_LENGTH);
-      const cleanedCountry = getCanonicalAllowedCountry(rawCountry);
-
       const payload = {
-        name: cleanedName,
-        city: cleanedCity,
-        state: cleanedState || null,
-        country: cleanedCountry,
+        name: sanitizeReportText(document.getElementById('name').value, MAX_BROWSE_FIELD_LENGTH),
+        city: sanitizeReportText(document.getElementById('city').value, MAX_BROWSE_FIELD_LENGTH),
+        state: sanitizeReportText(document.getElementById('state').value, MAX_BROWSE_FIELD_LENGTH) || null,
+        country: sanitizeReportText(document.getElementById('country').value, MAX_BROWSE_FIELD_LENGTH),
         categories: getSelectedCategories(),
-        submitter_uuid: getOrCreateSubmitterId()    // <-- CRITICAL FIX
+        submitter_uuid: getOrCreateSubmitterId(),
+        turnstileToken: token
       };
 
+      // Validation (keep your existing checks)
       if (!payload.name || !payload.city || !payload.country) {
         submitMessage.textContent = '* Please fill out the Name and Location fields to submit an entry.';
         submitMessage.className = 'message error';
@@ -2162,17 +2154,11 @@ function addStoryTimestamp() {
       const stateInputField = document.getElementById('state');
       const shouldValidateStateInput = stateInputField && stateInputField.tagName === 'INPUT';
       if (
-        cleanedName !== rawName ||
-        cleanedCity !== rawCity ||
-        (shouldValidateStateInput && cleanedState !== rawState)
+        hasInvalidLettersOnlyChars(payload.name) ||
+        hasInvalidLettersOnlyChars(payload.city) ||
+        (shouldValidateStateInput && hasInvalidLettersOnlyChars(payload.state))
       ) {
         submitMessage.textContent = '* Name and Location can only contain English letters (A-Z).';
-        submitMessage.className = 'message error';
-        return;
-      }
-
-      if (!cleanedCountry) {
-        submitMessage.textContent = '* Please select a valid country from the list.';
         submitMessage.className = 'message error';
         return;
       }
@@ -2203,32 +2189,34 @@ function addStoryTimestamp() {
 
       submitBtn.disabled = true;
 
-      const response = await supabaseClient.from('reports').insert(payload);
-
-      if (response.error) {
-        const errorMessage = String(response.error.message || '').toLowerCase();
-        if (errorMessage.includes('country')) {
-          submitMessage.textContent = 'Submission failed because the database schema is missing the country column. Please contact the site admin.';
-        } else {
-          submitMessage.textContent = 'Submission failed. Please double-check your entries and try again.';
+      try {
+        const response = await fetch('https://api.namehim.app/submit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const result = await response.json();
+        if (!response.ok) {
+          throw new Error(result.error || 'Submission failed');
         }
+
+        addSubmissionTimestamp();
+        updateRateLimitUI();
+        reportForm.reset();
+        renderStateField();
+        populateBrowseStateSelect();
+        resetTurnstileWidget();
+        submitMessage.textContent = 'Report submitted successfully.';
+        submitMessage.className = 'message success';
+        await loadReports();
+        window.location.hash = '#/browse';
+      } catch (error) {
+        console.error('Submission error:', error);
+        submitMessage.textContent = error.message;
         submitMessage.className = 'message error';
+      } finally {
         submitBtn.disabled = false;
-        return;
       }
-
-      addSubmissionTimestamp();
-      updateRateLimitUI();
-      reportForm.reset();
-      renderStateField();
-      populateBrowseStateSelect();
-      resetTurnstileWidget();
-      submitMessage.textContent = 'Report submitted successfully.';
-      submitMessage.className = 'message success';
-      submitBtn.disabled = false;
-
-      await loadReports();
-      window.location.hash = '#/browse';
     }
 
     async function setupReportActionHandler() {
