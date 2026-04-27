@@ -69,25 +69,25 @@ var simplemaps_usmap_mapinfo={map_name:'us',initial_view:{x:-20,y:-10,x2:980,y2:
     }
   }
 
-  function syncStateDropdown(stateName) {
-    if (typeof window.setStateDropdownValue === "function") {
-      window.setStateDropdownValue(stateName || "");
-    }
-  }
-
   function selectState(stateId, shouldFilter) {
     if (!stateId) {
       setSelectedState(null);
-      syncStateDropdown("");
       return;
     }
 
     setSelectedState(stateId);
     var stateName = getStateName(stateId);
-    syncStateDropdown(stateName);
 
-    if (shouldFilter && typeof window.filterReportsByState === "function") {
-      window.filterReportsByState(stateName);
+    if (shouldFilter) {
+      if (typeof window.clearBrowseLocationDropdownValues === "function") {
+        window.clearBrowseLocationDropdownValues();
+      }
+
+      if (typeof window.filterReportsByStateFromMap === "function") {
+        window.filterReportsByStateFromMap(stateName);
+      } else if (typeof window.filterReportsByState === "function") {
+        window.filterReportsByState(stateName);
+      }
     }
   }
 
