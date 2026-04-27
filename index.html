@@ -902,6 +902,7 @@
     const SUPABASE_URL = 'https://cmmggaprguusffiphegy.supabase.co';
     const SUPABASE_ANON_KEY = 'sb_publishable_G9Doh6gciyFVT1NDum55ZA_8ryL3fOw';
     const MAX_BROWSE_FIELD_LENGTH = 20;
+    const MAX_COUNTRY_LENGTH = 64;
     const MAX_COMMUNITY_POST_LENGTH = 1000;
     const MAX_SUBMISSIONS_PER_HOUR = 3;
     const RATE_LIMIT_STORAGE_KEY = 'submission_timestamps';
@@ -1085,7 +1086,7 @@
         name: sanitizeLettersOnlyText(report && report.name, MAX_BROWSE_FIELD_LENGTH),
         city: sanitizeLettersOnlyText(report && report.city, MAX_BROWSE_FIELD_LENGTH),
         state: sanitizeLettersOnlyText(report && report.state, MAX_BROWSE_FIELD_LENGTH),
-        country: sanitizeLettersOnlyText(report && report.country, MAX_BROWSE_FIELD_LENGTH),
+        country: sanitizeLettersOnlyText(report && report.country, MAX_COUNTRY_LENGTH),
         categories: sanitizeCategoryList(report && report.categories),
         created_at: sanitizeReportText(report && report.created_at, 64),
       }));
@@ -1115,7 +1116,7 @@
         .replace(/&/g, ' and ')
         .replace(/['’`]/g, '')
         .replace(/[^a-z0-9]+/g, ' ')
-        .replace(/\b(the|of|and|republic|state|islands?)\b/g, ' ')
+        .replace(/\b(the|of|and|republic|state|islands?|america)\b/g, ' ')
         .replace(/\s+/g, ' ')
         .trim();
 
@@ -1143,19 +1144,45 @@
         return;
       }
 
-      const countryOptions = Array.from(countryField.options || [])
-        .map((option) => {
-          const value = String(option.value || '').trim();
-          const label = String(option.textContent || '').trim();
-          if (!value || !label) {
-            return '';
-          }
+      const uniqueByNormalized = new Map();
+      const addCountryOption = (rawValue) => {
+        const value = String(rawValue || '').trim();
+        if (!value) {
+          return;
+        }
+
+        const normalized = normalizeCountryForFiltering(value);
+        if (!normalized || uniqueByNormalized.has(normalized)) {
+          return;
+        }
+
+        uniqueByNormalized.set(normalized, value);
+      };
+
+      Array.from(countryField.options || []).forEach((option) => {
+        addCountryOption(option.value || option.textContent);
+      });
+
+      if (Array.isArray(allReports)) {
+        allReports.forEach((report) => {
+          addCountryOption(report && report.country);
+        });
+      }
+
+      const sortedCountries = Array.from(uniqueByNormalized.values()).sort((a, b) =>
+        a.localeCompare(b, undefined, { sensitivity: 'base' })
+      );
+
+      const countryOptions = sortedCountries
+        .map((value) => {
+          const label = formatCountryForBrowse(value);
           return '<option value="' + escapeHTML(value) + '">' + escapeHTML(label) + '</option>';
         })
-        .filter(Boolean)
         .join('');
 
+      const existingValue = browseCountrySelect.value;
       browseCountrySelect.innerHTML = '<option value="">Select a country</option>' + countryOptions;
+      setCountryDropdownValue(existingValue);
     }
 
     function updateBrowseLocationFiltersUI() {
@@ -1189,7 +1216,19 @@
       if (!browseCountrySelect) {
         return;
       }
-      browseCountrySelect.value = countryName || '';
+
+      const incomingValue = String(countryName || '').trim();
+      if (!incomingValue) {
+        browseCountrySelect.value = '';
+        return;
+      }
+
+      const incomingNormalized = normalizeCountryForFiltering(incomingValue);
+      const matchingOption = Array.from(browseCountrySelect.options || []).find((option) => {
+        return normalizeCountryForFiltering(option.value) === incomingNormalized;
+      });
+
+      browseCountrySelect.value = matchingOption ? matchingOption.value : incomingValue;
     }
 
     window.setCountryDropdownValue = setCountryDropdownValue;
@@ -1489,8 +1528,7 @@ function addStoryTimestamp() {
 }
 
     function formatCountryForBrowse(country) {
-      const normalizedCountry = String(country || '').trim().toLowerCase();
-      if (normalizedCountry === 'united states of america') {
+      if (isUnitedStatesCountryValue(country)) {
         return 'USA';
       }
       return country;
@@ -1842,6 +1880,10 @@ function addStoryTimestamp() {
         window.allReports = allReports;
         hasLoadedReports = true;
         updateReportCount(allReports.length);
+        populateBrowseCountrySelect();
+        if (typeof window.refreshWorldMapReportData === 'function') {
+          window.refreshWorldMapReportData();
+        }
         updateBrowseViewFromRoute({ preserveBrowsePage: true });
         browseMessage.textContent = allReports.length
           ? `Loaded ${allReports.length} report(s).`
@@ -1855,7 +1897,11 @@ function addStoryTimestamp() {
         window.allReports = allReports;
         hasLoadedReports = true;
         updateReportCount(0);
+        populateBrowseCountrySelect();
         renderPagedReports([], 1);
+        if (typeof window.refreshWorldMapReportData === 'function') {
+          window.refreshWorldMapReportData();
+        }
       } finally {
         stopReportCountLoadingAnimation();
       }
@@ -2054,7 +2100,7 @@ function addStoryTimestamp() {
         name: sanitizeReportText(document.getElementById('name').value, MAX_BROWSE_FIELD_LENGTH),
         city: sanitizeReportText(document.getElementById('city').value, MAX_BROWSE_FIELD_LENGTH),
         state: sanitizeReportText(document.getElementById('state').value, MAX_BROWSE_FIELD_LENGTH) || null,
-        country: sanitizeReportText(document.getElementById('country').value, MAX_BROWSE_FIELD_LENGTH),
+        country: sanitizeReportText(document.getElementById('country').value, MAX_COUNTRY_LENGTH),
         categories: getSelectedCategories(),
         submitter_uuid: getOrCreateSubmitterId()    // <-- CRITICAL FIX
       };
@@ -2323,6 +2369,9 @@ function addStoryTimestamp() {
           }
           updateBrowseLocationFiltersUI();
           applySearchFilter();
+          if (typeof window.refreshWorldMapReportData === 'function') {
+            window.refreshWorldMapReportData();
+          }
         });
       }
       browsePagination.addEventListener('click', function onPaginationClick(event) {
@@ -2426,8 +2475,171 @@ function initWorldMapInteractions() {
   };
 }
 
+const WORLD_MAP_DEFAULT_COLOR = '#2d3748';
+const WORLD_MAP_HOVER_COLOR = '#a855f7';
+const WORLD_MAP_ACTIVE_COLOR = '#7c3aed';
+let selectedWorldCountryId = null;
+
+function getWorldMapCountryDisplayName(stateId) {
+  const stateSpecific = (window.simplemaps_worldmap_mapdata && window.simplemaps_worldmap_mapdata.state_specific) || {};
+  return stateSpecific[stateId] && stateSpecific[stateId].name ? stateSpecific[stateId].name : stateId;
+}
+
+function getWorldCountryIdByName(countryName) {
+  const stateSpecific = (window.simplemaps_worldmap_mapdata && window.simplemaps_worldmap_mapdata.state_specific) || {};
+  const target = normalizeCountryForFiltering(countryName);
+  if (!target) {
+    return null;
+  }
+
+  return Object.keys(stateSpecific).find((stateId) => {
+    return normalizeCountryForFiltering(stateSpecific[stateId] && stateSpecific[stateId].name) === target;
+  }) || null;
+}
+
+function getReportCountByCountryName(countryName) {
+  const target = normalizeCountryForFiltering(countryName);
+  if (!target) {
+    return 0;
+  }
+
+  return allReports.reduce((count, report) => {
+    return count + (normalizeCountryForFiltering(report && report.country) === target ? 1 : 0);
+  }, 0);
+}
+
+function setWorldCountryFill(stateId, color) {
+  if (!stateId || !window.simplemaps_worldmap || !window.simplemaps_worldmap.states || !window.simplemaps_worldmap.states[stateId]) {
+    return;
+  }
+
+  const state = window.simplemaps_worldmap.states[stateId];
+  if (state && typeof state.attr === 'function') {
+    state.attr({ fill: color });
+  }
+}
+
+function updateWorldMapStateDescriptions() {
+  const mapData = window.simplemaps_worldmap_mapdata;
+  const stateSpecific = (mapData && mapData.state_specific) || {};
+
+  Object.keys(stateSpecific).forEach((stateId) => {
+    const countryName = stateSpecific[stateId] && stateSpecific[stateId].name;
+    const count = getReportCountByCountryName(countryName);
+    stateSpecific[stateId].description = 'Reports: ' + count;
+    stateSpecific[stateId].url = '';
+  });
+}
+
+function applyWorldMapSelectionById(stateId, shouldFilter) {
+  if (selectedWorldCountryId && selectedWorldCountryId !== stateId) {
+    setWorldCountryFill(selectedWorldCountryId, WORLD_MAP_DEFAULT_COLOR);
+  }
+
+  selectedWorldCountryId = stateId || null;
+
+  if (!selectedWorldCountryId) {
+    setCountryDropdownValue('');
+    applySearchFilter();
+    return;
+  }
+
+  setWorldCountryFill(selectedWorldCountryId, WORLD_MAP_ACTIVE_COLOR);
+
+  const countryName = getWorldMapCountryDisplayName(selectedWorldCountryId);
+  if (shouldFilter) {
+    filterReportsByCountry(countryName);
+  } else {
+    setCountryDropdownValue(countryName);
+  }
+}
+
+function attachWorldMapHooks() {
+  const worldMap = window.simplemaps_worldmap;
+  if (!worldMap || !worldMap.hooks || worldMap.__namehimHooksApplied) {
+    return;
+  }
+
+  worldMap.__namehimHooksApplied = true;
+  const chainHook = (hookName, handler) => {
+    const previous = worldMap.hooks[hookName];
+    worldMap.hooks[hookName] = function chainedWorldHook() {
+      if (typeof previous === 'function') {
+        previous.apply(this, arguments);
+      }
+      handler.apply(this, arguments);
+    };
+  };
+
+  chainHook('complete', function onWorldComplete() {
+    updateWorldMapStateDescriptions();
+  });
+
+  chainHook('over_state', function onWorldOver(stateId) {
+    if (selectedWorldCountryId !== stateId) {
+      setWorldCountryFill(stateId, WORLD_MAP_HOVER_COLOR);
+    }
+  });
+
+  chainHook('out_state', function onWorldOut(stateId) {
+    setWorldCountryFill(stateId, selectedWorldCountryId === stateId ? WORLD_MAP_ACTIVE_COLOR : WORLD_MAP_DEFAULT_COLOR);
+  });
+
+  chainHook('preclick_state', function onWorldClick(stateId, event) {
+    if (event && typeof event.preventDefault === 'function') {
+      event.preventDefault();
+    }
+    if (event && typeof event.stopPropagation === 'function') {
+      event.stopPropagation();
+    }
+    applyWorldMapSelectionById(stateId, true);
+  });
+}
+
+function syncWorldMapWithCurrentFilters() {
+  updateWorldMapStateDescriptions();
+
+  const selectedCountry = String((browseCountrySelect && browseCountrySelect.value) || '').trim();
+  const stateId = getWorldCountryIdByName(selectedCountry);
+  if (!stateId) {
+    if (selectedWorldCountryId) {
+      setWorldCountryFill(selectedWorldCountryId, WORLD_MAP_DEFAULT_COLOR);
+    }
+    selectedWorldCountryId = null;
+    return;
+  }
+
+  applyWorldMapSelectionById(stateId, false);
+}
+
+window.clearSelectedWorldCountry = function clearSelectedWorldCountry() {
+  if (selectedWorldCountryId) {
+    setWorldCountryFill(selectedWorldCountryId, WORLD_MAP_DEFAULT_COLOR);
+  }
+  selectedWorldCountryId = null;
+};
+
+window.selectWorldCountryOnMapByName = function selectWorldCountryOnMapByName(countryName) {
+  const stateId = getWorldCountryIdByName(countryName);
+  if (stateId) {
+    applyWorldMapSelectionById(stateId, true);
+  }
+};
+
+window.refreshWorldMapReportData = function refreshWorldMapReportData() {
+  attachWorldMapHooks();
+  syncWorldMapWithCurrentFilters();
+  if (window.simplemaps_worldmap && typeof window.simplemaps_worldmap.refresh === 'function') {
+    window.simplemaps_worldmap.refresh();
+  }
+};
+
 initWorldMapToggle();
 initWorldMapInteractions();
+window.setTimeout(function initializeWorldMapHooks() {
+  attachWorldMapHooks();
+  syncWorldMapWithCurrentFilters();
+}, 0);
 
     init();
   </script>
