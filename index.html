@@ -2062,59 +2062,67 @@ function addStoryTimestamp() {
     }
 
     async function submitStory(event) {
-  event.preventDefault();
-  storyMessage.textContent = '';
-  storyTurnstileWarning.classList.add('hidden');
+      event.preventDefault();
+      storyMessage.textContent = '';
+      storyTurnstileWarning.classList.add('hidden');
 
-  if (!canSubmitStory()) {
-    storyRateWarning.classList.remove('hidden');
-    return;
-  }
+      if (!canSubmitStory()) {
+        storyRateWarning.classList.remove('hidden');
+        return;
+      }
 
-  const token = getTurnstileToken();
-  if (!token) {
-    storyTurnstileWarning.classList.remove('hidden');
-    return;
-  }
+      const token = getTurnstileToken();
+      if (!token) {
+        storyTurnstileWarning.classList.remove('hidden');
+        return;
+      }
 
-  const titleValue = storyTitle.value.trim();
-  const content = storyContent.value.trim();
-  const title = titleValue ? titleValue.slice(0, MAX_COMMUNITY_POST_LENGTH) : null;
-  if (content.length > MAX_COMMUNITY_POST_LENGTH) {
-    storyMessage.textContent = `Your story must be ${MAX_COMMUNITY_POST_LENGTH} characters or fewer.`;
-    storyMessage.className = 'message error';
-    return;
-  }
-  if (!content) {
-    storyMessage.textContent = 'Please write your story.';
-    storyMessage.className = 'message error';
-    return;
-  }
+      const title = storyTitle.value.trim() || null;
+      const content = storyContent.value.trim();
+      if (content.length > MAX_COMMUNITY_POST_LENGTH) {
+        storyMessage.textContent = `Your story must be ${MAX_COMMUNITY_POST_LENGTH} characters or fewer.`;
+        storyMessage.className = 'message error';
+        return;
+      }
+      if (!content) {
+        storyMessage.textContent = 'Please write your story.';
+        storyMessage.className = 'message error';
+        return;
+      }
 
-  storySubmitBtn.disabled = true;
+      storySubmitBtn.disabled = true;
 
-  const payload = {
-    title,
-    content,
-    submitter_uuid: localStorage.getItem('submitter_id')
-  };
+      try {
+        const response = await fetch('https://api.namehim.app/submit-story', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title,
+            content,
+            submitter_uuid: localStorage.getItem('submitter_id'),
+            turnstileToken: token
+          })
+        });
+        const result = await response.json();
+        if (!response.ok) {
+          throw new Error(result.error || 'Submission failed');
+        }
 
-  const { error } = await supabaseClient.from('stories').insert(payload);
-
-  if (error) {
-    storyMessage.textContent = `Submission failed: ${error.message}`;
-    storyMessage.className = 'message error';
-    storySubmitBtn.disabled = false;
-    return;
-  }
-
-  addStoryTimestamp();
-  storyMessage.textContent = 'Thank you. Your story has been submitted for review.';
-  storyMessage.className = 'message success';
-  storyForm.reset();
-  if (window.turnstile) window.turnstile.reset();
-  storySubmitBtn.disabled = false;
-}
+        addStoryTimestamp();
+        storyMessage.textContent = 'Thank you. Your story has been submitted for review.';
+        storyMessage.className = 'message success';
+        storyForm.reset();
+        if (window.turnstile) window.turnstile.reset();
+        // Optionally, refresh the stories list without reload
+        if (window.location.hash === '#/community') loadApprovedStories();
+      } catch (error) {
+        console.error('Story submission error:', error);
+        storyMessage.textContent = error.message;
+        storyMessage.className = 'message error';
+      } finally {
+        storySubmitBtn.disabled = false;
+      }
+    }
 
     async function handleSubmit(event) {
       event.preventDefault();
