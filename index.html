@@ -1851,35 +1851,46 @@ function addStoryTimestamp() {
     }
 
     async function loadReports() {
-  browseMessage.textContent = 'Loading reports...';
-  browseMessage.className = 'message';
-  startReportCountLoadingAnimation();
+      browseMessage.textContent = 'Loading reports...';
+      browseMessage.className = 'message';
+      startReportCountLoadingAnimation();
 
-  try {
-    const reports = await fetchAllReportsFromSupabase(1000);
+      const WORKER_URL = 'https://api.namehim.app/filtered-reports';
 
-    allReports = sanitizeFetchedReports(reports || []);
-    window.allReports = allReports;
-    hasLoadedReports = true;
-    updateReportCount(allReports.length);
-    updateBrowseViewFromRoute({ preserveBrowsePage: true });
-    browseMessage.textContent = allReports.length
-      ? `Loaded ${allReports.length} report(s).`
-      : 'No reports yet. Be the first to submit.';
-    browseMessage.className = 'message';
-  } catch (error) {
-    console.error('Failed to load reports from Supabase:', error);
-    browseMessage.textContent = 'Unable to load reports right now. Please try again in a moment.';
-    browseMessage.className = 'message error';
-    allReports = [];
-    window.allReports = allReports;
-    hasLoadedReports = true;
-    updateReportCount(0);
-    renderPagedReports([], 1);
-  } finally {
-    stopReportCountLoadingAnimation();
-  }
-}
+      try {
+        const response = await fetch(WORKER_URL);
+        if (!response.ok) {
+          throw new Error(`Worker returned ${response.status}`);
+        }
+        const reports = await response.json();
+
+        if (!Array.isArray(reports)) {
+          throw new Error('Worker did not return an array');
+        }
+
+        // Sanitize the reports (keep your existing sanitization logic)
+        allReports = sanitizeFetchedReports(reports);
+        window.allReports = allReports;
+        hasLoadedReports = true;
+        updateReportCount(allReports.length);
+        updateBrowseViewFromRoute({ preserveBrowsePage: true });
+        browseMessage.textContent = allReports.length
+          ? `Loaded ${allReports.length} report(s).`
+          : 'No reports yet. Be the first to submit.';
+        browseMessage.className = 'message';
+      } catch (error) {
+        console.error('Failed to load reports via Worker:', error);
+        browseMessage.textContent = 'Unable to load reports right now. Please try again in a moment.';
+        browseMessage.className = 'message error';
+        allReports = [];
+        window.allReports = allReports;
+        hasLoadedReports = true;
+        updateReportCount(0);
+        renderPagedReports([], 1);
+      } finally {
+        stopReportCountLoadingAnimation();
+      }
+    }
 
     function setSingleStoryControlsVisible(visible) {
       if (!singleStoryControls) {
