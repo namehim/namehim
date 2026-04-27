@@ -1004,12 +1004,13 @@
         return [];
       }
 
+      const allowed = new Set(CATEGORIES);
       const seen = new Set();
       const cleaned = [];
       let totalChars = 0;
       for (let i = 0; i < rawCategories.length; i += 1) {
         const category = sanitizeReportText(rawCategories[i], MAX_CATEGORY_LENGTH).toLowerCase();
-        if (!category || seen.has(category)) {
+        if (!category || seen.has(category) || !allowed.has(category)) {
           continue;
         }
         totalChars += category.length;
@@ -1020,6 +1021,36 @@
         cleaned.push(category);
       }
       return cleaned;
+    }
+
+    function validateCategorySelection(rawCategories) {
+      if (!Array.isArray(rawCategories) || rawCategories.length === 0) {
+        return { valid: false, reason: 'missing' };
+      }
+
+      if (rawCategories.length > MAX_CATEGORY_COUNT) {
+        return { valid: false, reason: 'too_many' };
+      }
+
+      const allowed = new Set(CATEGORIES);
+      const seen = new Set();
+      let totalChars = 0;
+
+      for (let i = 0; i < rawCategories.length; i += 1) {
+        const category = sanitizeReportText(rawCategories[i], MAX_CATEGORY_LENGTH).toLowerCase();
+        if (!category || !allowed.has(category) || seen.has(category)) {
+          return { valid: false, reason: 'invalid_option' };
+        }
+
+        totalChars += category.length;
+        if (totalChars > MAX_CATEGORY_TOTAL_CHARS) {
+          return { valid: false, reason: 'too_long' };
+        }
+
+        seen.add(category);
+      }
+
+      return { valid: true };
     }
 
     function sanitizeFetchedReports(rows) {
@@ -2037,6 +2068,17 @@ function addStoryTimestamp() {
 
       if (!payload.categories.length) {
         submitMessage.textContent = 'Please select at least one category.';
+        submitMessage.className = 'message error';
+        return;
+      }
+
+      const categoryValidation = validateCategorySelection(payload.categories);
+      if (!categoryValidation.valid) {
+        if (categoryValidation.reason === 'too_many') {
+          submitMessage.textContent = 'You can select up to 8 categories only.';
+        } else {
+          submitMessage.textContent = 'Please select only valid categories from the list.';
+        }
         submitMessage.className = 'message error';
         return;
       }
