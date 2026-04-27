@@ -347,9 +347,6 @@ var simplemaps_worldmap_mapinfo={  map_name: "world",  initial_view: {    x: 0, 
     setSelectedCountry(countryId);
 
     if (shouldFilter) {
-      if (typeof window.clearBrowseLocationDropdownValues === "function") {
-        window.clearBrowseLocationDropdownValues();
-      }
       if (typeof window.filterReportsByCountryFromMap === "function") {
         window.filterReportsByCountryFromMap(countryName);
       } else if (typeof window.filterReportsByCountry === "function") {
