@@ -348,7 +348,7 @@
       border: 1px solid var(--border);
       border-radius: 0.7rem;
       padding: 1rem;
-      max-width: 720px;
+      width: 100%;
     }
 
     .row { margin-bottom: 0.9rem; }
@@ -364,6 +364,7 @@
       display: flex;
       flex-wrap: nowrap;
       gap: 0.8rem;
+      margin-bottom: 0.9rem;
     }
 
     .grid > .row {
@@ -644,11 +645,6 @@
             <input id="name" type="text" maxlength="20" required inputmode="text" />
           </div>
 
-          <div class="row">
-            <label for="city">City *</label>
-            <input id="city" type="text" maxlength="20" required inputmode="text" />
-          </div>
-
           <div class="grid" id="country-state-grid">
             <div class="row">
               <label for="country">Country *</label>
@@ -856,6 +852,11 @@
             <div id="state-field-container" class="row">
               <label for="state">State / Province (optional)</label>
               <input id="state" type="text" maxlength="20" placeholder="State / Province (optional)" inputmode="text" />
+            </div>
+
+            <div class="row">
+              <label for="city">City *</label>
+              <input id="city" type="text" maxlength="20" required inputmode="text" />
             </div>
           </div>
 
