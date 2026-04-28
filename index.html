@@ -2040,6 +2040,13 @@ function addStoryTimestamp() {
       return tokenField && tokenField.value ? tokenField.value : '';
     }
 
+    function waitForTurnstile() {
+      return new Promise((resolve) => {
+        if (window.turnstile) resolve();
+        else setTimeout(() => resolve(waitForTurnstile()), 100);
+      });
+    }
+
     function resetTurnstileWidget() {
       if (window.turnstile && typeof window.turnstile.reset === 'function') {
         // Find the first turnstile iframe and reset
@@ -2262,6 +2269,7 @@ function addStoryTimestamp() {
 
         let token;
         try {
+          await waitForTurnstile();
           // Execute the hidden Turnstile widget (this will show a challenge if needed)
           token = await window.turnstile.execute(turnstileWidget);
         } catch (err) {
