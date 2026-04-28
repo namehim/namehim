@@ -2228,58 +2228,88 @@ function addStoryTimestamp() {
     }
 
     async function setupReportActionHandler() {
-  reportsBody.addEventListener('click', async function onTableClick(event) {
-    const shareButton = event.target.closest('.report-share-btn');
-    if (shareButton) {
-      const sharedReportId = shareButton.getAttribute('data-report-id');
-      if (sharedReportId) {
-        await copyShareLink(sharedReportId);
-      }
-      return;
+      reportsBody.addEventListener('click', async function onTableClick(event) {
+        const button = event.target.closest('.report-entry-btn');
+        if (!button) return;
+        const reportId = button.getAttribute('data-report-id');
+        if (!reportId) return;
+
+        // 1. Ask for a reason (same as before)
+        let reason = prompt(
+          'Why are you reporting this entry? (Optional, max 250 characters)\n\nThis helps moderators understand the issue.',
+          ''
+        );
+        if (reason === null) return; // user cancelled
+        reason = reason.trim().slice(0, 250);
+        if (reason === '') reason = null;
+
+        // 2. Get submitter_uuid (already stored in localStorage)
+        const submitterId = localStorage.getItem('submitter_id') || 'anonymous';
+
+        // 3. Disable button to avoid double submit
+        const originalText = button.textContent;
+        button.textContent = 'Verifying...';
+        button.disabled = true;
+
+        // 4. Execute Turnstile to obtain a token
+        const turnstileWidget = document.getElementById('flag-turnstile-container');
+        if (!window.turnstile) {
+          alert('CAPTCHA system not ready. Please try again.');
+          button.textContent = originalText;
+          button.disabled = false;
+          return;
+        }
+
+        let token;
+        try {
+          // Execute the hidden Turnstile widget (this will show a challenge if needed)
+          token = await window.turnstile.execute(turnstileWidget);
+        } catch (err) {
+          console.error('Turnstile execution failed:', err);
+          alert('CAPTCHA verification failed. Please try again.');
+          button.textContent = originalText;
+          button.disabled = false;
+          return;
+        }
+
+        if (!token) {
+          alert('CAPTCHA verification required. Please try again.');
+          button.textContent = originalText;
+          button.disabled = false;
+          return;
+        }
+
+        // 5. Send the flag to your Worker
+        button.textContent = 'Submitting...';
+        try {
+          const response = await fetch('https://api.namehim.app/submit-flag', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              report_id: parseInt(reportId, 10),
+              reason: reason,
+              submitter_uuid: submitterId,
+              turnstileToken: token
+            })
+          });
+          const result = await response.json();
+
+          if (!response.ok) {
+            throw new Error(result.error || 'Submission failed');
+          }
+
+          alert('Entry #' + reportId + ' has been flagged for review.\nThank you for your report.');
+        } catch (error) {
+          console.error('Flag submission error:', error);
+          alert('Could not flag entry. Please try again later.');
+        } finally {
+          // Reset the Turnstile widget so it can be used again
+          window.turnstile.reset(turnstileWidget);
+          button.textContent = originalText;
+          button.disabled = false;
+        }
+      });
     }
-
-    const button = event.target.closest('.report-entry-btn');
-    if (!button) return;
-    const reportId = button.getAttribute('data-report-id');
-    if (!reportId) return;
-
-    let reason = prompt(
-      'Why are you reporting this entry? (Optional, max 250 characters)\n\nThis helps moderators understand the issue.',
-      ''
-    );
-    if (reason === null) return;
-    reason = reason.trim().slice(0, 250);
-    if (reason === '') reason = null;
-
-    const submitterId = localStorage.getItem('submitter_id') || 'anonymous';
-
-    const originalText = button.textContent;
-    button.textContent = 'Submitting...';
-    button.disabled = true;
-
-    try {
-      const { error } = await supabaseClient
-        .from('report_flags')
-        .insert({
-          report_id: parseInt(reportId, 10),
-          reason: reason,
-          flagged_by: submitterId
-        });
-
-      if (error) {
-        console.error(error);
-        alert('Could not flag entry. Please try again later.');
-      } else {
-        alert('Entry #' + reportId + ' has been flagged for review.\nThank you for your report.');
-      }
-    } catch (err) {
-      alert('An error occurred. Please try again.');
-    } finally {
-      button.textContent = originalText;
-      button.disabled = false;
-    }
-  });
-}
 
     function startRealtimeUpdates() {
   // Auto‑refresh removed to save Worker requests.
