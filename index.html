@@ -270,6 +270,27 @@
       gap: 0.45rem;
       flex-wrap: wrap;
     }
+    .flag-panel {
+      margin-top: 0.65rem;
+      padding: 0.65rem;
+      border: 1px solid var(--border);
+      border-radius: 0.55rem;
+      background: #111827;
+    }
+    .flag-panel p {
+      margin: 0 0 0.55rem 0;
+      font-size: 0.85rem;
+      color: #cbd5e1;
+    }
+    .flag-panel textarea {
+      min-height: 5rem;
+      margin-bottom: 0.55rem;
+    }
+    .flag-actions {
+      display: flex;
+      gap: 0.45rem;
+      flex-wrap: wrap;
+    }
 
     .report-timestamp {
       font-size: 0.7rem;
@@ -1747,6 +1768,7 @@ function addStoryTimestamp() {
     }
 
     function renderReportRows(reports) {
+      closeActiveFlagPanel();
       reportsBody.innerHTML = '';
 
       if (!reports.length) {
@@ -2261,6 +2283,8 @@ function addStoryTimestamp() {
         if (!button) return;
         const reportId = button.getAttribute('data-report-id');
         if (!reportId) return;
+        const row = button.closest('tr');
+        if (!row) return;
 
         // 1. Ask for a reason (same as before)
         let reason = prompt(
