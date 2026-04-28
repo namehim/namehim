@@ -270,6 +270,27 @@
       gap: 0.45rem;
       flex-wrap: wrap;
     }
+    .flag-panel {
+      margin-top: 0.65rem;
+      padding: 0.65rem;
+      border: 1px solid var(--border);
+      border-radius: 0.55rem;
+      background: #111827;
+    }
+    .flag-panel p {
+      margin: 0 0 0.55rem 0;
+      font-size: 0.85rem;
+      color: #cbd5e1;
+    }
+    .flag-panel textarea {
+      min-height: 5rem;
+      margin-bottom: 0.55rem;
+    }
+    .flag-actions {
+      display: flex;
+      gap: 0.45rem;
+      flex-wrap: wrap;
+    }
 
     .report-timestamp {
       font-size: 0.7rem;
@@ -879,8 +900,6 @@
       <span>Open source</span>
     </div>
   </footer>
-  <div id="flag-turnstile-container" class="cf-turnstile" data-sitekey="0x4AAAAAADCC51BDmfY6JgSc" data-theme="dark" style="display: none;"></div>
-
   <script>
     const routes = {
   '#/browse': 'page-browse',
@@ -901,6 +920,7 @@
 
     const SUPABASE_URL = 'https://cmmggaprguusffiphegy.supabase.co';
     const SUPABASE_ANON_KEY = 'sb_publishable_G9Doh6gciyFVT1NDum55ZA_8ryL3fOw';
+    const TURNSTILE_SITE_KEY = '0x4AAAAAADCC51BDmfY6JgSc';
     const MAX_BROWSE_FIELD_LENGTH = 30;
     const MAX_COUNTRY_LENGTH = 64;
     const MAX_COMMUNITY_POST_LENGTH = 1000;
@@ -974,6 +994,7 @@
     let activeSingleReportId = null;
     let activeSingleStoryId = null;
     let hasLoadedReports = false;
+    let activeFlagPanel = null;
 
     // --- ADDED: submitter_uuid management (critical fix) ---
     function getOrCreateSubmitterId() {
@@ -1745,6 +1766,7 @@ function addStoryTimestamp() {
     }
 
     function renderReportRows(reports) {
+      closeActiveFlagPanel();
       reportsBody.innerHTML = '';
 
       if (!reports.length) {
@@ -2047,6 +2069,121 @@ function addStoryTimestamp() {
       });
     }
 
+    function closeActiveFlagPanel() {
+      if (!activeFlagPanel) {
+        return;
+      }
+      if (window.turnstile && activeFlagPanel.widgetId !== null && activeFlagPanel.widgetId !== undefined) {
+        try {
+          window.turnstile.remove(activeFlagPanel.widgetId);
+        } catch (error) {
+          console.warn('Could not remove flag Turnstile widget:', error);
+        }
+      }
+      if (activeFlagPanel.element && activeFlagPanel.element.parentNode) {
+        activeFlagPanel.element.parentNode.removeChild(activeFlagPanel.element);
+      }
+      activeFlagPanel = null;
+    }
+
+    async function openFlagPanel(reportId, row) {
+      closeActiveFlagPanel();
+      await waitForTurnstile();
+
+      const actionCell = row.querySelector('td[data-label="Actions"]');
+      if (!actionCell) {
+        throw new Error('Could not find actions area for flagging.');
+      }
+
+      const panel = document.createElement('div');
+      panel.className = 'flag-panel';
+      panel.innerHTML = `
+        <p><strong>Step 1:</strong> Complete the CAPTCHA, then the reason box will appear.</p>
+        <div class="flag-captcha"></div>
+        <div class="flag-reason-wrap hidden">
+          <p><strong>Step 2:</strong> Add a reason (optional, max 250 characters), then submit.</p>
+          <textarea class="flag-reason-input" maxlength="250" placeholder="Why are you reporting this entry?"></textarea>
+          <div class="flag-actions">
+            <button type="button" class="primary flag-submit-btn">Submit report flag</button>
+            <button type="button" class="flag-cancel-btn">Cancel</button>
+          </div>
+        </div>
+      `;
+      actionCell.appendChild(panel);
+
+      const captchaContainer = panel.querySelector('.flag-captcha');
+      const reasonWrap = panel.querySelector('.flag-reason-wrap');
+      const submitBtnEl = panel.querySelector('.flag-submit-btn');
+      const cancelBtnEl = panel.querySelector('.flag-cancel-btn');
+      const reasonInput = panel.querySelector('.flag-reason-input');
+
+      const panelState = {
+        element: panel,
+        reportId,
+        token: '',
+        widgetId: null
+      };
+      activeFlagPanel = panelState;
+
+      panelState.widgetId = window.turnstile.render(captchaContainer, {
+        sitekey: TURNSTILE_SITE_KEY,
+        theme: 'dark',
+        callback: function onSolved(token) {
+          panelState.token = token || '';
+          reasonWrap.classList.remove('hidden');
+        },
+        'expired-callback': function onExpired() {
+          panelState.token = '';
+          reasonWrap.classList.add('hidden');
+        },
+        'error-callback': function onError() {
+          panelState.token = '';
+          reasonWrap.classList.add('hidden');
+        }
+      });
+
+      cancelBtnEl.addEventListener('click', function onCancelFlag() {
+        closeActiveFlagPanel();
+      });
+
+      submitBtnEl.addEventListener('click', async function onSubmitFlag() {
+        if (!panelState.token) {
+          alert('Please complete the CAPTCHA first.');
+          return;
+        }
+
+        const submitterId = localStorage.getItem('submitter_id') || 'anonymous';
+        const reason = String(reasonInput.value || '').trim().slice(0, 250) || null;
+        submitBtnEl.disabled = true;
+        submitBtnEl.textContent = 'Submitting...';
+
+        try {
+          const response = await fetch('https://api.namehim.app/submit-flag', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              report_id: parseInt(panelState.reportId, 10),
+              reason: reason,
+              submitter_uuid: submitterId,
+              turnstileToken: panelState.token
+            })
+          });
+          const result = await response.json();
+          if (!response.ok) {
+            throw new Error(result.error || 'Submission failed');
+          }
+
+          alert('Entry #' + panelState.reportId + ' has been flagged for review.\nThank you for your report.');
+          closeActiveFlagPanel();
+        } catch (error) {
+          console.error('Flag submission error:', error);
+          alert('Could not flag entry. Please try again later.');
+          submitBtnEl.disabled = false;
+          submitBtnEl.textContent = 'Submit report flag';
+        }
+      });
+    }
+
     function resetTurnstileWidget() {
       if (window.turnstile && typeof window.turnstile.reset === 'function') {
         // Find the first turnstile iframe and reset
@@ -2240,81 +2377,14 @@ function addStoryTimestamp() {
         if (!button) return;
         const reportId = button.getAttribute('data-report-id');
         if (!reportId) return;
+        const row = button.closest('tr');
+        if (!row) return;
 
-        // 1. Ask for a reason (same as before)
-        let reason = prompt(
-          'Why are you reporting this entry? (Optional, max 250 characters)\n\nThis helps moderators understand the issue.',
-          ''
-        );
-        if (reason === null) return; // user cancelled
-        reason = reason.trim().slice(0, 250);
-        if (reason === '') reason = null;
-
-        // 2. Get submitter_uuid (already stored in localStorage)
-        const submitterId = localStorage.getItem('submitter_id') || 'anonymous';
-
-        // 3. Disable button to avoid double submit
-        const originalText = button.textContent;
-        button.textContent = 'Verifying...';
-        button.disabled = true;
-
-        // 4. Execute Turnstile to obtain a token
-        const turnstileWidget = document.getElementById('flag-turnstile-container');
-        if (!window.turnstile) {
-          alert('CAPTCHA system not ready. Please try again.');
-          button.textContent = originalText;
-          button.disabled = false;
-          return;
-        }
-
-        let token;
         try {
-          await waitForTurnstile();
-          // Execute the hidden Turnstile widget (this will show a challenge if needed)
-          token = await window.turnstile.execute(turnstileWidget);
-        } catch (err) {
-          console.error('Turnstile execution failed:', err);
-          alert('CAPTCHA verification failed. Please try again.');
-          button.textContent = originalText;
-          button.disabled = false;
-          return;
-        }
-
-        if (!token) {
-          alert('CAPTCHA verification required. Please try again.');
-          button.textContent = originalText;
-          button.disabled = false;
-          return;
-        }
-
-        // 5. Send the flag to your Worker
-        button.textContent = 'Submitting...';
-        try {
-          const response = await fetch('https://api.namehim.app/submit-flag', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              report_id: parseInt(reportId, 10),
-              reason: reason,
-              submitter_uuid: submitterId,
-              turnstileToken: token
-            })
-          });
-          const result = await response.json();
-
-          if (!response.ok) {
-            throw new Error(result.error || 'Submission failed');
-          }
-
-          alert('Entry #' + reportId + ' has been flagged for review.\nThank you for your report.');
+          await openFlagPanel(reportId, row);
         } catch (error) {
-          console.error('Flag submission error:', error);
-          alert('Could not flag entry. Please try again later.');
-        } finally {
-          // Reset the Turnstile widget so it can be used again
-          window.turnstile.reset(turnstileWidget);
-          button.textContent = originalText;
-          button.disabled = false;
+          console.error('Could not open flag panel:', error);
+          alert('CAPTCHA system not ready. Please try again.');
         }
       });
     }
