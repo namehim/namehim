@@ -371,6 +371,13 @@
       font-size: 0.9rem;
     }
 
+    .check.emotional-abuse { background: rgba(100, 116, 139, 0.2); border-color: #64748b; }
+    .check.physical-abuse { background: rgba(251, 146, 60, 0.2); border-color: #fb923c; }
+    .check.stalking { background: rgba(250, 204, 21, 0.2); border-color: #facc15; }
+    .check.sexual-assault { background: rgba(168, 85, 247, 0.2); border-color: #a855f7; }
+    .check.rape { background: rgba(220, 38, 38, 0.2); border-color: #dc2626; }
+    .check.pedo { background: rgba(20, 184, 166, 0.2); border-color: #14b8a6; }
+
     .warning { color: #f59e0b; font-size: 0.85rem; margin-top: 0.5rem; }
     .hidden { display: none !important; }
     .map-toggle-wrap {
@@ -1323,7 +1330,7 @@ function filterReportsByState(stateFullName) {
       categoryContainer.innerHTML = '';
       CATEGORIES.forEach((category) => {
         const label = document.createElement('label');
-        label.className = 'check';
+        label.className = 'check ' + getCategoryClass(category);
         label.innerHTML = '<input type="checkbox" name="categories" value="' + escapeHTML(category) + '"> <span>' + escapeHTML(toTitleCase(category)) + '</span>';
         categoryContainer.appendChild(label);
       });
