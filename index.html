@@ -270,27 +270,6 @@
       gap: 0.45rem;
       flex-wrap: wrap;
     }
-    .flag-panel {
-      margin-top: 0.65rem;
-      padding: 0.65rem;
-      border: 1px solid var(--border);
-      border-radius: 0.55rem;
-      background: #111827;
-    }
-    .flag-panel p {
-      margin: 0 0 0.55rem 0;
-      font-size: 0.85rem;
-      color: #cbd5e1;
-    }
-    .flag-panel textarea {
-      min-height: 5rem;
-      margin-bottom: 0.55rem;
-    }
-    .flag-actions {
-      display: flex;
-      gap: 0.45rem;
-      flex-wrap: wrap;
-    }
 
     .report-timestamp {
       font-size: 0.7rem;
@@ -900,7 +879,6 @@
       <span>Open source</span>
     </div>
   </footer>
-  <div id="flag-turnstile-container" style="display: none;"></div>
 
   <script>
     const routes = {
@@ -922,7 +900,6 @@
 
     const SUPABASE_URL = 'https://cmmggaprguusffiphegy.supabase.co';
     const SUPABASE_ANON_KEY = 'sb_publishable_G9Doh6gciyFVT1NDum55ZA_8ryL3fOw';
-    const TURNSTILE_SITE_KEY = '0x4AAAAAADCC51BDmfY6JgSc';
     const MAX_BROWSE_FIELD_LENGTH = 30;
     const MAX_COUNTRY_LENGTH = 64;
     const MAX_COMMUNITY_POST_LENGTH = 1000;
@@ -996,7 +973,6 @@
     let activeSingleReportId = null;
     let activeSingleStoryId = null;
     let hasLoadedReports = false;
-    let flagTurnstileWidgetId = null;
 
     // --- ADDED: submitter_uuid management (critical fix) ---
     function getOrCreateSubmitterId() {
@@ -1768,7 +1744,6 @@ function addStoryTimestamp() {
     }
 
     function renderReportRows(reports) {
-      closeActiveFlagPanel();
       reportsBody.innerHTML = '';
 
       if (!reports.length) {
@@ -2064,32 +2039,6 @@ function addStoryTimestamp() {
       return tokenField && tokenField.value ? tokenField.value : '';
     }
 
-    function waitForTurnstile() {
-      return new Promise((resolve) => {
-        if (window.turnstile) resolve();
-        else setTimeout(() => resolve(waitForTurnstile()), 100);
-      });
-    }
-
-    async function ensureFlagTurnstileWidget() {
-      await waitForTurnstile();
-      if (flagTurnstileWidgetId !== null) {
-        return flagTurnstileWidgetId;
-      }
-
-      const turnstileContainer = document.getElementById('flag-turnstile-container');
-      if (!turnstileContainer) {
-        throw new Error('Flag CAPTCHA container is missing.');
-      }
-
-      flagTurnstileWidgetId = window.turnstile.render(turnstileContainer, {
-        sitekey: TURNSTILE_SITE_KEY,
-        theme: 'dark',
-        size: 'invisible'
-      });
-      return flagTurnstileWidgetId;
-    }
-
     function resetTurnstileWidget() {
       if (window.turnstile && typeof window.turnstile.reset === 'function') {
         // Find the first turnstile iframe and reset
@@ -2278,86 +2227,58 @@ function addStoryTimestamp() {
     }
 
     async function setupReportActionHandler() {
-      reportsBody.addEventListener('click', async function onTableClick(event) {
-        const button = event.target.closest('.report-entry-btn');
-        if (!button) return;
-        const reportId = button.getAttribute('data-report-id');
-        if (!reportId) return;
-        const row = button.closest('tr');
-        if (!row) return;
-
-        // 1. Ask for a reason (same as before)
-        let reason = prompt(
-          'Why are you reporting this entry? (Optional, max 250 characters)\n\nThis helps moderators understand the issue.',
-          ''
-        );
-        if (reason === null) return; // user cancelled
-        reason = reason.trim().slice(0, 250);
-        if (reason === '') reason = null;
-
-        // 2. Get submitter_uuid (already stored in localStorage)
-        const submitterId = localStorage.getItem('submitter_id') || 'anonymous';
-
-        // 3. Disable button to avoid double submit
-        const originalText = button.textContent;
-        button.textContent = 'Verifying...';
-        button.disabled = true;
-
-        // 4. Execute Turnstile to obtain a token
-        let turnstileWidgetId;
-        let token;
-        try {
-          turnstileWidgetId = await ensureFlagTurnstileWidget();
-          await window.turnstile.execute(turnstileWidgetId);
-          token = window.turnstile.getResponse(turnstileWidgetId);
-        } catch (err) {
-          console.error('Turnstile execution failed:', err);
-          alert('CAPTCHA verification failed. Please try again.');
-          button.textContent = originalText;
-          button.disabled = false;
-          return;
-        }
-
-        if (!token) {
-          alert('CAPTCHA verification required. Please try again.');
-          button.textContent = originalText;
-          button.disabled = false;
-          return;
-        }
-
-        // 5. Send the flag to your Worker
-        button.textContent = 'Submitting...';
-        try {
-          const response = await fetch('https://api.namehim.app/submit-flag', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              report_id: parseInt(reportId, 10),
-              reason: reason,
-              submitter_uuid: submitterId,
-              turnstileToken: token
-            })
-          });
-          const result = await response.json();
-
-          if (!response.ok) {
-            throw new Error(result.error || 'Submission failed');
-          }
-
-          alert('Entry #' + reportId + ' has been flagged for review.\nThank you for your report.');
-        } catch (error) {
-          console.error('Flag submission error:', error);
-          alert('Could not flag entry. Please try again later.');
-        } finally {
-          // Reset the Turnstile widget so it can be used again
-          if (window.turnstile && turnstileWidgetId !== undefined) {
-            window.turnstile.reset(turnstileWidgetId);
-          }
-          button.textContent = originalText;
-          button.disabled = false;
-        }
-      });
+  reportsBody.addEventListener('click', async function onTableClick(event) {
+    const shareButton = event.target.closest('.report-share-btn');
+    if (shareButton) {
+      const sharedReportId = shareButton.getAttribute('data-report-id');
+      if (sharedReportId) {
+        await copyShareLink(sharedReportId);
+      }
+      return;
     }
+
+    const button = event.target.closest('.report-entry-btn');
+    if (!button) return;
+    const reportId = button.getAttribute('data-report-id');
+    if (!reportId) return;
+
+    let reason = prompt(
+      'Why are you reporting this entry? (Optional, max 250 characters)\n\nThis helps moderators understand the issue.',
+      ''
+    );
+    if (reason === null) return;
+    reason = reason.trim().slice(0, 250);
+    if (reason === '') reason = null;
+
+    const submitterId = localStorage.getItem('submitter_id') || 'anonymous';
+
+    const originalText = button.textContent;
+    button.textContent = 'Submitting...';
+    button.disabled = true;
+
+    try {
+      const { error } = await supabaseClient
+        .from('report_flags')
+        .insert({
+          report_id: parseInt(reportId, 10),
+          reason: reason,
+          flagged_by: submitterId
+        });
+
+      if (error) {
+        console.error(error);
+        alert('Could not flag entry. Please try again later.');
+      } else {
+        alert('Entry #' + reportId + ' has been flagged for review.\nThank you for your report.');
+      }
+    } catch (err) {
+      alert('An error occurred. Please try again.');
+    } finally {
+      button.textContent = originalText;
+      button.disabled = false;
+    }
+  });
+}
 
     function startRealtimeUpdates() {
   // Auto‑refresh removed to save Worker requests.
