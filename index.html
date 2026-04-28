@@ -879,7 +879,7 @@
       <span>Open source</span>
     </div>
   </footer>
-  <div id="flag-turnstile-container" class="cf-turnstile" data-sitekey="0x4AAAAAADCC51BDmfY6JgSc" data-theme="dark" style="display: none;"></div>
+  <div id="flag-turnstile-container" style="display: none;"></div>
 
   <script>
     const routes = {
@@ -901,6 +901,7 @@
 
     const SUPABASE_URL = 'https://cmmggaprguusffiphegy.supabase.co';
     const SUPABASE_ANON_KEY = 'sb_publishable_G9Doh6gciyFVT1NDum55ZA_8ryL3fOw';
+    const TURNSTILE_SITE_KEY = '0x4AAAAAADCC51BDmfY6JgSc';
     const MAX_BROWSE_FIELD_LENGTH = 30;
     const MAX_COUNTRY_LENGTH = 64;
     const MAX_COMMUNITY_POST_LENGTH = 1000;
@@ -974,6 +975,7 @@
     let activeSingleReportId = null;
     let activeSingleStoryId = null;
     let hasLoadedReports = false;
+    let flagTurnstileWidgetId = null;
 
     // --- ADDED: submitter_uuid management (critical fix) ---
     function getOrCreateSubmitterId() {
@@ -2047,6 +2049,25 @@ function addStoryTimestamp() {
       });
     }
 
+    async function ensureFlagTurnstileWidget() {
+      await waitForTurnstile();
+      if (flagTurnstileWidgetId !== null) {
+        return flagTurnstileWidgetId;
+      }
+
+      const turnstileContainer = document.getElementById('flag-turnstile-container');
+      if (!turnstileContainer) {
+        throw new Error('Flag CAPTCHA container is missing.');
+      }
+
+      flagTurnstileWidgetId = window.turnstile.render(turnstileContainer, {
+        sitekey: TURNSTILE_SITE_KEY,
+        theme: 'dark',
+        size: 'invisible'
+      });
+      return flagTurnstileWidgetId;
+    }
+
     function resetTurnstileWidget() {
       if (window.turnstile && typeof window.turnstile.reset === 'function') {
         // Find the first turnstile iframe and reset
@@ -2259,19 +2280,12 @@ function addStoryTimestamp() {
         button.disabled = true;
 
         // 4. Execute Turnstile to obtain a token
-        const turnstileWidget = document.getElementById('flag-turnstile-container');
-        if (!window.turnstile) {
-          alert('CAPTCHA system not ready. Please try again.');
-          button.textContent = originalText;
-          button.disabled = false;
-          return;
-        }
-
+        let turnstileWidgetId;
         let token;
         try {
-          await waitForTurnstile();
-          // Execute the hidden Turnstile widget (this will show a challenge if needed)
-          token = await window.turnstile.execute(turnstileWidget);
+          turnstileWidgetId = await ensureFlagTurnstileWidget();
+          await window.turnstile.execute(turnstileWidgetId);
+          token = window.turnstile.getResponse(turnstileWidgetId);
         } catch (err) {
           console.error('Turnstile execution failed:', err);
           alert('CAPTCHA verification failed. Please try again.');
@@ -2312,7 +2326,9 @@ function addStoryTimestamp() {
           alert('Could not flag entry. Please try again later.');
         } finally {
           // Reset the Turnstile widget so it can be used again
-          window.turnstile.reset(turnstileWidget);
+          if (window.turnstile && turnstileWidgetId !== undefined) {
+            window.turnstile.reset(turnstileWidgetId);
+          }
           button.textContent = originalText;
           button.disabled = false;
         }
