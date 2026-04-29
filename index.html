@@ -2062,6 +2062,7 @@ function addStoryTimestamp() {
 
     async function submitStory(event) {
       event.preventDefault();
+      alert("Captcha token: " + (getTurnstileToken() || "NO TOKEN FOUND"));
       storyMessage.textContent = '';
       storyTurnstileWarning.classList.add('hidden');
 
