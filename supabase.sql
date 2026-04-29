@@ -67,6 +67,14 @@ alter table public.reports
 
 create index if not exists reports_created_at_idx on public.reports (created_at desc);
 create index if not exists reports_submitter_uuid_idx on public.reports (submitter_uuid);
+create index if not exists reports_duplicate_same_submitter_idx
+  on public.reports (
+    submitter_uuid,
+    lower(btrim(name)),
+    lower(btrim(city)),
+    lower(btrim(coalesce(state, ''))),
+    lower(btrim(country))
+  );
 
 alter table public.reports enable row level security;
 
@@ -115,6 +123,15 @@ with check (
     where r.submitter_uuid = reports.submitter_uuid
       and r.created_at > (now() - interval '1 hour')
   ) < 3
+  and not exists (
+    select 1
+    from public.reports r
+    where r.submitter_uuid = reports.submitter_uuid
+      and lower(btrim(r.name)) = lower(btrim(reports.name))
+      and lower(btrim(r.city)) = lower(btrim(reports.city))
+      and lower(btrim(coalesce(r.state, ''))) = lower(btrim(coalesce(reports.state, '')))
+      and lower(btrim(r.country)) = lower(btrim(reports.country))
+  )
 );
 
 -- Community stories table and policies (used by the Community page).
