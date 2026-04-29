@@ -277,6 +277,18 @@
       margin-top: 0.3rem;
       display: block;
     }
+    .report-tally {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 2.4rem;
+      border: 1px solid rgba(96, 165, 250, 0.45);
+      border-radius: 999px;
+      background: rgba(96, 165, 250, 0.12);
+      color: #bfdbfe;
+      font-weight: 700;
+      padding: 0.28rem 0.55rem;
+    }
     .toast {
       position: fixed;
       right: 1rem;
@@ -583,6 +595,7 @@
               <tr>
                 <th>Name</th>
                 <th>Location (City, State/Province, Country)</th>
+                <th>Reports</th>
                 <th>Categories</th>
                 <th>Actions</th>
               </tr>
@@ -905,6 +918,7 @@
     const MAX_COMMUNITY_POST_LENGTH = 1000;
     const MAX_SUBMISSIONS_PER_HOUR = 3;
     const RATE_LIMIT_STORAGE_KEY = 'submission_timestamps';
+    const SUBMITTED_REPORT_KEYS_STORAGE_KEY = 'submitted_report_keys';
     const SUBMITTER_ID_KEY = 'submitter_id';
 
     const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -937,6 +951,7 @@
     const MAX_CATEGORY_LENGTH = 40;
     const MAX_CATEGORY_COUNT = 8;
     const MAX_CATEGORY_TOTAL_CHARS = 240;
+    const REPORT_TALLY_DEDUPE_WINDOW_MS = 15 * 60 * 1000;
     const DEFAULT_PAGE_TITLE = document.title || 'NameHim';
     const storyForm = document.getElementById('story-form');
     const showStoryFormBtn = document.getElementById('show-story-form-btn');
@@ -1094,6 +1109,66 @@
           categories: sanitizeCategoryList(report && report.categories),
           created_at: sanitizeReportText(report && report.created_at, 64),
         };
+      });
+    }
+
+    function normalizeReportTallyPart(value) {
+      return String(value || '')
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, ' ');
+    }
+
+    function getReportTallyKey(report) {
+      return [
+        normalizeReportTallyPart(report && report.name),
+        normalizeReportTallyPart(report && report.city),
+        normalizeReportTallyPart(report && report.state),
+        normalizeCountryForFiltering(report && report.country)
+      ].join('|');
+    }
+
+    function getReportTimestampMs(report) {
+      const timestamp = Date.parse(report && report.created_at);
+      return Number.isFinite(timestamp) ? timestamp : 0;
+    }
+
+    function countDedupedReportsForTally(reports) {
+      const sortedReports = reports.slice().sort((a, b) => getReportTimestampMs(a) - getReportTimestampMs(b));
+      let tally = 0;
+      let previousTimestamp = null;
+
+      sortedReports.forEach((report) => {
+        const timestamp = getReportTimestampMs(report);
+        if (previousTimestamp === null || timestamp - previousTimestamp >= REPORT_TALLY_DEDUPE_WINDOW_MS) {
+          tally += 1;
+        }
+        previousTimestamp = timestamp;
+      });
+
+      return tally || sortedReports.length || 1;
+    }
+
+    function addReportTallies(reports) {
+      const reportsByKey = new Map();
+
+      reports.forEach((report) => {
+        const key = getReportTallyKey(report);
+        if (!reportsByKey.has(key)) {
+          reportsByKey.set(key, []);
+        }
+        reportsByKey.get(key).push(report);
+      });
+
+      const tallyByKey = new Map();
+      reportsByKey.forEach((groupedReports, key) => {
+        tallyByKey.set(key, countDedupedReportsForTally(groupedReports));
+      });
+
+      return reports.map((report) => {
+        return Object.assign({}, report, {
+          report_tally: tallyByKey.get(getReportTallyKey(report)) || 1
+        });
       });
     }
 
@@ -1449,7 +1524,7 @@ function filterReportsByState(stateFullName) {
       setSingleReportControlsVisible(true);
       renderReportRows([]);
       renderPagination(0, 1);
-      reportsBody.innerHTML = '<tr><td colspan="4">Report not found. <a href="#/browse">Back to all reports</a>.</td></tr>';
+      reportsBody.innerHTML = '<tr><td colspan="5">Report not found. <a href="#/browse">Back to all reports</a>.</td></tr>';
       browseMessage.textContent = 'Report not found.';
       browseMessage.className = 'message error';
       setBrowseTitleForSingleReport(null);
@@ -1544,6 +1619,48 @@ function filterReportsByState(stateFullName) {
       const timestamps = getSubmissionTimestamps();
       timestamps.push(Date.now());
       localStorage.setItem(RATE_LIMIT_STORAGE_KEY, JSON.stringify(timestamps));
+    }
+
+    function getSubmittedReportKeys() {
+      try {
+        const raw = localStorage.getItem(SUBMITTED_REPORT_KEYS_STORAGE_KEY);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed)
+          ? parsed.filter((value) => typeof value === 'string' && value)
+          : [];
+      } catch (error) {
+        localStorage.removeItem(SUBMITTED_REPORT_KEYS_STORAGE_KEY);
+        return [];
+      }
+    }
+
+    function hasSubmittedReport(payload) {
+      return getSubmittedReportKeys().includes(getReportTallyKey(payload));
+    }
+
+    function rememberSubmittedReport(payload) {
+      const key = getReportTallyKey(payload);
+      const keys = getSubmittedReportKeys();
+      if (!keys.includes(key)) {
+        keys.push(key);
+        localStorage.setItem(SUBMITTED_REPORT_KEYS_STORAGE_KEY, JSON.stringify(keys.slice(-100)));
+      }
+    }
+
+    function getDuplicateSubmissionMessage() {
+      return 'You have already submitted a report for this same name and location. Thank you for adding your report once.';
+    }
+
+    function getFriendlySubmissionError(error) {
+      const message = String((error && error.message) || 'Submission failed');
+      if (
+        message.toLowerCase().includes('duplicate') ||
+        message.includes('23505') ||
+        message.includes('duplicate_same_submitter')
+      ) {
+        return getDuplicateSubmissionMessage();
+      }
+      return message;
     }
 
     function getStorySubmissionHistory() {
@@ -1748,7 +1865,7 @@ function addStoryTimestamp() {
 
       if (!reports.length) {
         const emptyRow = document.createElement('tr');
-        emptyRow.innerHTML = '<td colspan="4">No reports yet. Be the first to submit.</td>';
+        emptyRow.innerHTML = '<td colspan="5">No reports yet. Be the first to submit.</td>';
         reportsBody.appendChild(emptyRow);
         return;
       }
@@ -1772,6 +1889,7 @@ function addStoryTimestamp() {
         row.innerHTML = `
           <td data-label="Name">${escapeHTML(report.name || '')}${timestampHTML}</td>
           <td data-label="Location">${formatLocation(report.city, report.state, report.country)}</td>
+          <td data-label="Reports"><span class="report-tally" title="Reports matching this name and location. Reports less than 15 minutes apart count once.">${escapeHTML(report.report_tally || 1)}</span></td>
           <td data-label="Categories"><div class="pills">${pillHTML}</div></td>
           <td data-label="Actions">
             <div class="row-actions">
@@ -1897,24 +2015,77 @@ function addStoryTimestamp() {
       browseMessage.className = 'message';
     }
 
+    function isLocalDevelopmentOrigin() {
+      return (
+        window.location.protocol === 'file:' ||
+        window.location.hostname === 'localhost' ||
+        window.location.hostname === '127.0.0.1' ||
+        window.location.hostname === ''
+      );
+    }
+
+    async function fetchReportsFromWorker() {
+      const WORKER_URL = 'https://api.namehim.app/filtered-reports';
+      const response = await fetch(WORKER_URL);
+      if (!response.ok) {
+        throw new Error(`Worker returned ${response.status}`);
+      }
+
+      const reports = await response.json();
+      if (!Array.isArray(reports)) {
+        throw new Error('Worker did not return an array');
+      }
+
+      return reports;
+    }
+
+    async function fetchReportsFromSupabaseForLocalDev() {
+      const pageSize = 1000;
+      let from = 0;
+      const reports = [];
+
+      while (true) {
+        const { data, error } = await supabaseClient
+          .from('reports')
+          .select('id, name, city, state, country, categories, created_at')
+          .order('created_at', { ascending: false })
+          .range(from, from + pageSize - 1);
+
+        if (error) {
+          throw error;
+        }
+
+        const page = Array.isArray(data) ? data : [];
+        reports.push(...page);
+
+        if (page.length < pageSize) {
+          break;
+        }
+
+        from += pageSize;
+      }
+
+      return reports;
+    }
+
     async function loadReports() {
       browseMessage.textContent = 'Loading reports...';
       browseMessage.className = 'message';
       startReportCountLoadingAnimation();
-      const WORKER_URL = 'https://api.namehim.app/filtered-reports';
 
       try {
-        const response = await fetch(WORKER_URL);
-        if (!response.ok) {
-          throw new Error(`Worker returned ${response.status}`);
+        let reports;
+        try {
+          reports = await fetchReportsFromWorker();
+        } catch (workerError) {
+          if (!isLocalDevelopmentOrigin()) {
+            throw workerError;
+          }
+          console.warn('Worker report fetch failed locally. Falling back to Supabase:', workerError);
+          reports = await fetchReportsFromSupabaseForLocalDev();
         }
-        const reports = await response.json();
 
-        if (!Array.isArray(reports)) {
-          throw new Error('Worker did not return an array');
-        }
-
-        allReports = sanitizeFetchedReports(reports);
+        allReports = addReportTallies(sanitizeFetchedReports(reports));
         window.allReports = allReports;
         hasLoadedReports = true;
         updateReportCount(allReports.length);
@@ -2194,6 +2365,12 @@ function addStoryTimestamp() {
         return;
       }
 
+      if (hasSubmittedReport(payload)) {
+        submitMessage.textContent = getDuplicateSubmissionMessage();
+        submitMessage.className = 'message error';
+        return;
+      }
+
       submitBtn.disabled = true;
 
       try {
@@ -2208,6 +2385,7 @@ function addStoryTimestamp() {
         }
 
         addSubmissionTimestamp();
+        rememberSubmittedReport(payload);
         updateRateLimitUI();
         reportForm.reset();
         renderStateField();
@@ -2219,7 +2397,7 @@ function addStoryTimestamp() {
         window.location.hash = '#/browse';
       } catch (error) {
         console.error('Submission error:', error);
-        submitMessage.textContent = error.message;
+        submitMessage.textContent = getFriendlySubmissionError(error);
         submitMessage.className = 'message error';
       } finally {
         submitBtn.disabled = false;
