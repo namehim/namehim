@@ -1,0 +1,285 @@
+var __defProp = Object.defineProperty;
+var __name = (target, value) => __defProp(target, "name", { value, configurable: true });
+
+// src/index.js
+var CACHE_KEY = "reports_cache";
+var REFRESH_LOCK_KEY = "reports_refreshing";
+var LAST_SUCCESS_KEY = "reports_last_success";
+
+export default {
+  async fetch(request, env, ctx) {
+    const url = new URL(request.url);
+    
+    // CORS preflight
+    if (request.method === "OPTIONS") {
+      return new Response(null, {
+        status: 204,
+        headers: {
+          "Access-Control-Allow-Origin": "https://namehim.app",
+          "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type",
+          "Access-Control-Max-Age": "86400"
+        }
+      });
+    }
+
+    if (request.method === "POST" && url.pathname === "/submit") {
+      return handleSubmitReport(request, env);
+    }
+    if (request.method === "POST" && url.pathname === "/submit-story") {
+      return handleSubmitStory(request, env);
+    }
+
+    // ----- GET /filtered-reports (or root) -----
+    let cached = null;
+    try {
+      if (env.CACHE_KV) {
+        cached = await env.CACHE_KV.get(CACHE_KEY, "json");
+      }
+    } catch (e) {
+      console.error("KV read error:", e);
+    }
+
+    if (cached && Array.isArray(cached)) {
+      ctx.waitUntil(refreshIfStale(env));
+      return new Response(JSON.stringify(cached), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "https://namehim.app",
+          "Cache-Control": "public, max-age=60"
+        }
+      });
+    }
+
+    // No cache or cache invalid – fetch fresh
+    try {
+      const reports = await fetchAllReports(env);
+      if (reports && reports.length) {
+        if (env.CACHE_KV) {
+          await env.CACHE_KV.put(CACHE_KEY, JSON.stringify(reports));
+          await env.CACHE_KV.put(LAST_SUCCESS_KEY, Date.now().toString());
+        }
+        return new Response(JSON.stringify(reports), {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "https://namehim.app"
+          }
+        });
+      }
+    } catch (err) {
+      console.error("Initial fetch failed:", err);
+    }
+
+    return new Response(JSON.stringify({ error: "Service temporarily unavailable. Please try again in a minute." }), {
+      status: 503,
+      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "https://namehim.app" }
+    });
+  }
+};
+
+async function handleSubmitReport(request, env) {
+  const supabaseUrl = env.SUPABASE_URL;
+  const supabaseKey = env.SUPABASE_SERVICE_ROLE_KEY;
+  let payload;
+  try {
+    payload = await request.json();
+  } catch (err) {
+    return errorResponse("Invalid JSON", 400);
+  }
+
+  if (!payload.name || !payload.city || !payload.country || !payload.categories) {
+    return errorResponse("Missing required fields", 400);
+  }
+
+  const token = payload.turnstileToken;
+  if (!token) return errorResponse("CAPTCHA token missing", 400);
+
+  // Verify Turnstile
+  const verifyRes = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+    method: "POST",
+    body: new URLSearchParams({ secret: env.TURNSTILE_SECRET_KEY, response: token }),
+    headers: { "Content-Type": "application/x-www-form-urlencoded" }
+  });
+  const verifyData = await verifyRes.json();
+  if (!verifyData.success) return errorResponse("Invalid CAPTCHA", 400);
+
+  const { turnstileToken, ...reportData } = payload;
+  const insertRes = await supabaseFetch(supabaseUrl, supabaseKey, "/rest/v1/reports", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(reportData)
+  });
+  if (!insertRes.ok) {
+    console.error(await insertRes.text());
+    return errorResponse("Submission failed", 500);
+  }
+
+  // Invalidate cache after successful insert
+  if (env.CACHE_KV) {
+    await env.CACHE_KV.delete(CACHE_KEY);
+    await env.CACHE_KV.delete(LAST_SUCCESS_KEY);
+  }
+  return new Response(JSON.stringify({ success: true }), { status: 200, headers: corsHeaders() });
+}
+__name(handleSubmitReport, "handleSubmitReport");
+
+async function handleSubmitStory(request, env) {
+  const supabaseUrl = env.SUPABASE_URL;
+  const supabaseKey = env.SUPABASE_SERVICE_ROLE_KEY;
+  let payload;
+  try {
+    payload = await request.json();
+  } catch (err) {
+    return errorResponse("Invalid JSON", 400);
+  }
+
+  const { title, content, submitter_uuid, turnstileToken } = payload;
+  if (!content || typeof content !== "string") {
+    return errorResponse("Missing story content", 400);
+  }
+  if (content.length > 1000) return errorResponse("Story too long", 400);
+  if (!turnstileToken) return errorResponse("CAPTCHA token missing", 400);
+
+  const verifyRes = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+    method: "POST",
+    body: new URLSearchParams({ secret: env.TURNSTILE_SECRET_KEY, response: turnstileToken }),
+    headers: { "Content-Type": "application/x-www-form-urlencoded" }
+  });
+  const verifyData = await verifyRes.json();
+  if (!verifyData.success) return errorResponse("Invalid CAPTCHA", 400);
+
+  const insertRes = await supabaseFetch(supabaseUrl, supabaseKey, "/rest/v1/stories", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      title: title || null,
+      content,
+      submitter_uuid: submitter_uuid || null,
+      is_approved: false
+    })
+  });
+  if (!insertRes.ok) {
+    console.error(await insertRes.text());
+    return errorResponse("Submission failed", 500);
+  }
+  return new Response(JSON.stringify({ success: true }), { status: 200, headers: corsHeaders() });
+}
+__name(handleSubmitStory, "handleSubmitStory");
+
+function corsHeaders() {
+  return {
+    "Content-Type": "application/json",
+    "Access-Control-Allow-Origin": "https://namehim.app"
+  };
+}
+__name(corsHeaders, "corsHeaders");
+
+function errorResponse(message, status) {
+  return new Response(JSON.stringify({ error: message }), { status, headers: corsHeaders() });
+}
+__name(errorResponse, "errorResponse");
+
+async function refreshIfStale(env) {
+  if (!env.CACHE_KV) return;
+  const lastSuccess = await env.CACHE_KV.get(LAST_SUCCESS_KEY);
+  const now = Date.now();
+  if (lastSuccess && now - parseInt(lastSuccess) < 300000) return; // 5 min
+
+  const lock = await env.CACHE_KV.get(REFRESH_LOCK_KEY);
+  if (lock) return;
+  await env.CACHE_KV.put(REFRESH_LOCK_KEY, "1", { expirationTtl: 60 });
+  try {
+    const reports = await fetchAllReports(env);
+    if (reports && reports.length) {
+      await env.CACHE_KV.put(CACHE_KEY, JSON.stringify(reports));
+      await env.CACHE_KV.put(LAST_SUCCESS_KEY, now.toString());
+    }
+  } catch (err) {
+    console.error("Background refresh failed:", err);
+  } finally {
+    await env.CACHE_KV.delete(REFRESH_LOCK_KEY);
+  }
+}
+__name(refreshIfStale, "refreshIfStale");
+
+async function supabaseFetch(supabaseUrl, supabaseKey, relativeUrl, options = {}) {
+  const fullUrl = `${supabaseUrl}${relativeUrl}`;
+  const fetchOptions = {
+    ...options,
+    headers: {
+      "apikey": supabaseKey,
+      "Authorization": `Bearer ${supabaseKey}`,
+      ...options.headers
+    },
+    cf: { resolveOverride: "cmmggaprguusffiphegy.supabase.co" }
+  };
+  return fetch(fullUrl, fetchOptions);
+}
+__name(supabaseFetch, "supabaseFetch");
+
+async function fetchAllReports(env) {
+  const supabaseUrl = env.SUPABASE_URL;
+  const supabaseKey = env.SUPABASE_SERVICE_ROLE_KEY;
+  const batchSize = 1000;
+  let allReports = [];
+  let offset = 0;
+  let attempts = 0;
+  const MAX_ATTEMPTS = 2;
+  const TIMEOUT_MS = 60000;
+
+  // First, fetch blocklist for filtering
+  const blockRes = await supabaseFetch(supabaseUrl, supabaseKey, "/rest/v1/blocked_names?select=name");
+  let blockedSet = new Set();
+  if (blockRes.ok) {
+    const blockedNames = await blockRes.json();
+    blockedSet = new Set(blockedNames.map(b => b.name.toLowerCase()));
+  } else {
+    console.error("Failed to fetch blocklist");
+  }
+
+  while (true) {
+    const url = `${supabaseUrl}/rest/v1/reports?select=id,name,city,state,country,categories,created_at&order=created_at.desc&limit=${batchSize}&offset=${offset}`;
+    let batch = null;
+    let success = false;
+    for (let i = 0; i < MAX_ATTEMPTS; i++) {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
+        const res = await fetch(url, {
+          headers: { "apikey": supabaseKey, "Authorization": `Bearer ${supabaseKey}` },
+          signal: controller.signal,
+          cf: { resolveOverride: "cmmggaprguusffiphegy.supabase.co" }
+        });
+        clearTimeout(timeout);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        batch = await res.json();
+        success = true;
+        break;
+      } catch (err) {
+        console.error(`Batch offset ${offset} attempt ${i+1} failed:`, err);
+        if (i === MAX_ATTEMPTS - 1) return null;
+        await new Promise(r => setTimeout(r, 2000));
+      }
+    }
+    if (!success || !batch.length) break;
+
+    // Filter each report (blocked names + malicious patterns)
+    const isCleanReport = (r) => {
+      if (blockedSet.has(r.name.toLowerCase())) return false;
+      const cats = r.categories || [];
+      if (!Array.isArray(cats) || cats.length > 8) return false;
+      if (cats.some(c => typeof c !== "string" || c.length > 100 || /[<>]|javascript:/i.test(c))) return false;
+      if (JSON.stringify(r).length > 5000) return false;
+      return true;
+    };
+    const cleanedBatch = batch.filter(isCleanReport);
+    allReports = allReports.concat(cleanedBatch);
+
+    if (batch.length < batchSize) break;
+    offset += batchSize;
+  }
+  return allReports;
+}
+__name(fetchAllReports, "fetchAllReports");
