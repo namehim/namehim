@@ -23,6 +23,13 @@ export default {
       });
     }
 
+    if (request.method === "GET" && url.pathname === "/version") {
+  return new Response(JSON.stringify({
+    commit: env.COMMIT_HASH || "unknown",
+    deployed_at: env.DEPLOYED_AT || "unknown"
+  }), { headers: { "Content-Type": "application/json" } });
+}
+
     if (request.method === "POST" && url.pathname === "/submit") {
       return handleSubmitReport(request, env);
     }
