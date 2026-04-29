@@ -1302,7 +1302,7 @@ function filterReportsByState(stateFullName) {
   } else {
     // Fallback
     const filtered = allReports.filter(r => r.state === stateFullName);
-    renderPagedReports(filtered, 1);
+    loadReports(pageValue)(filtered, 1);
     const browseMsg = document.getElementById('browse-message');
     if (browseMsg) browseMsg.textContent = filtered.length ? `Showing ${filtered.length} of ${allReports.length} report(s), ${REPORTS_PER_PAGE} per page.` : 'No reports found.';
   }
@@ -1848,7 +1848,7 @@ function addStoryTimestamp() {
       browsePagination.innerHTML = paginationHTML;
     }
 
-    function renderPagedReports(reports, page) {
+    function loadReports(pageValue)(reports, page) {
       currentFilteredReports = reports;
       const totalPages = Math.max(1, Math.ceil(reports.length / REPORTS_PER_PAGE));
       currentPage = Math.min(Math.max(page, 1), totalPages);
@@ -1891,7 +1891,7 @@ function addStoryTimestamp() {
       });
 
       if (!query && !selectedCountry && !selectedState) {
-        renderPagedReports(filtered, preservePage ? currentPage : 1);
+        loadReports(pageValue)(filtered, preservePage ? currentPage : 1);
         browseMessage.textContent = filtered.length
           ? 'Loaded ' + allReports.length + ' report(s). Showing up to ' + REPORTS_PER_PAGE + ' per page.'
           : 'No reports yet. Be the first to submit.';
@@ -1899,7 +1899,7 @@ function addStoryTimestamp() {
         return;
       }
 
-      renderPagedReports(filtered, preservePage ? currentPage : 1);
+      loadReports(pageValue)(filtered, preservePage ? currentPage : 1);
       browseMessage.textContent = filtered.length
         ? 'Showing ' + filtered.length + ' of ' + allReports.length + ' report(s), ' + REPORTS_PER_PAGE + ' per page.'
         : 'No matching reports found.';
@@ -2505,19 +2505,19 @@ function addStoryTimestamp() {
         const navDirection = target.getAttribute('data-page-nav');
 
         if (Number.isInteger(pageValue) && pageValue > 0) {
-          renderPagedReports(currentFilteredReports, pageValue);
+          loadReports(pageValue)(currentFilteredReports, pageValue);
           return;
         }
 
         if (navDirection === 'prev') {
-          renderPagedReports(currentFilteredReports, currentPage - 1);
+          loadReports(pageValue)(currentFilteredReports, currentPage - 1);
         } else if (navDirection === 'next') {
-          renderPagedReports(currentFilteredReports, currentPage + 1);
+          loadReports(pageValue)(currentFilteredReports, currentPage + 1);
         } else if (navDirection === 'first') {
-          renderPagedReports(currentFilteredReports, 1);
+          loadReports(pageValue)(currentFilteredReports, 1);
         } else if (navDirection === 'last') {
           const totalPages = Math.max(1, Math.ceil(currentFilteredReports.length / REPORTS_PER_PAGE));
-          renderPagedReports(currentFilteredReports, totalPages);
+          loadReports(pageValue)(currentFilteredReports, totalPages);
         }
       });
       reportForm.addEventListener('submit', handleSubmit);
