@@ -1302,7 +1302,7 @@ function filterReportsByState(stateFullName) {
   } else {
     // Fallback
     const filtered = allReports.filter(r => r.state === stateFullName);
-    loadReports(pageValue)(filtered, 1);
+    renderPagedReports(filtered, 1);
     const browseMsg = document.getElementById('browse-message');
     if (browseMsg) browseMsg.textContent = filtered.length ? `Showing ${filtered.length} of ${allReports.length} report(s), ${REPORTS_PER_PAGE} per page.` : 'No reports found.';
   }
@@ -1848,7 +1848,7 @@ function addStoryTimestamp() {
       browsePagination.innerHTML = paginationHTML;
     }
 
-    function loadReports(pageValue)(reports, page) {
+    function renderPagedReports(reports, page) {
       currentFilteredReports = reports;
       const totalPages = Math.max(1, Math.ceil(reports.length / REPORTS_PER_PAGE));
       currentPage = Math.min(Math.max(page, 1), totalPages);
@@ -1891,7 +1891,7 @@ function addStoryTimestamp() {
       });
 
       if (!query && !selectedCountry && !selectedState) {
-        loadReports(pageValue)(filtered, preservePage ? currentPage : 1);
+        renderPagedReports(filtered, preservePage ? currentPage : 1);
         browseMessage.textContent = filtered.length
           ? 'Loaded ' + allReports.length + ' report(s). Showing up to ' + REPORTS_PER_PAGE + ' per page.'
           : 'No reports yet. Be the first to submit.';
@@ -1899,44 +1899,60 @@ function addStoryTimestamp() {
         return;
       }
 
-      loadReports(pageValue)(filtered, preservePage ? currentPage : 1);
+      renderPagedReports(filtered, preservePage ? currentPage : 1);
       browseMessage.textContent = filtered.length
         ? 'Showing ' + filtered.length + ' of ' + allReports.length + ' report(s), ' + REPORTS_PER_PAGE + ' per page.'
         : 'No matching reports found.';
       browseMessage.className = 'message';
     }
 
-    async function loadReports(page = 1) {
-  browseMessage.textContent = 'Loading reports...';
-  browseMessage.className = 'message';
-  startReportCountLoadingAnimation();
-  const WORKER_URL = `https://api.namehim.app/reports?page=${page}&limit=${REPORTS_PER_PAGE}`;
+    async function loadReports() {
+      browseMessage.textContent = 'Loading reports...';
+      browseMessage.className = 'message';
+      startReportCountLoadingAnimation();
+      const WORKER_URL = 'https://api.namehim.app/filtered-reports';
 
-  try {
-    const response = await fetch(WORKER_URL);
-    if (!response.ok) throw new Error(`Worker returned ${response.status}`);
-    const data = await response.json();
-    
-    if (!data.reports || !Array.isArray(data.reports)) {
-      throw new Error('Worker did not return an array');
+      try {
+        const response = await fetch(WORKER_URL);
+        if (!response.ok) {
+          throw new Error(`Worker returned ${response.status}`);
+        }
+        const reports = await response.json();
+
+        if (!Array.isArray(reports)) {
+          throw new Error('Worker did not return an array');
+        }
+
+        allReports = sanitizeFetchedReports(reports);
+        window.allReports = allReports;
+        hasLoadedReports = true;
+        updateReportCount(allReports.length);
+        populateBrowseCountrySelect();
+        if (typeof window.refreshWorldMapReportData === 'function') {
+          window.refreshWorldMapReportData();
+        }
+        updateBrowseViewFromRoute({ preserveBrowsePage: true });
+        browseMessage.textContent = allReports.length
+          ? `Loaded ${allReports.length} report(s).`
+          : 'No reports yet. Be the first to submit.';
+        browseMessage.className = 'message';
+      } catch (error) {
+        console.error('Failed to load reports via Worker:', error);
+        browseMessage.textContent = 'Unable to load reports right now. Please try again in a moment.';
+        browseMessage.className = 'message error';
+        allReports = [];
+        window.allReports = allReports;
+        hasLoadedReports = true;
+        updateReportCount(0);
+        populateBrowseCountrySelect();
+        renderPagedReports([], 1);
+        if (typeof window.refreshWorldMapReportData === 'function') {
+          window.refreshWorldMapReportData();
+        }
+      } finally {
+        stopReportCountLoadingAnimation();
+      }
     }
-
-    allReports = data.reports;  // Now only one page
-    window.allReports = allReports;
-    hasLoadedReports = true;
-    updateReportCount(data.total);  // Use the total count from API
-    // ... rest of your existing update logic (maps, etc.)
-    renderReportRows(allReports);
-    renderPagination(data.total, data.page);
-    
-    browseMessage.textContent = `Loaded ${allReports.length} report(s) (page ${data.page} of ${Math.ceil(data.total / REPORTS_PER_PAGE)}).`;
-    browseMessage.className = 'message';
-  } catch (error) {
-    // ... error handling as before
-  } finally {
-    stopReportCountLoadingAnimation();
-  }
-}
 
     function setSingleStoryControlsVisible(visible) {
       if (!singleStoryControls) {
@@ -2505,19 +2521,19 @@ function addStoryTimestamp() {
         const navDirection = target.getAttribute('data-page-nav');
 
         if (Number.isInteger(pageValue) && pageValue > 0) {
-          loadReports(pageValue)(currentFilteredReports, pageValue);
+          renderPagedReports(currentFilteredReports, pageValue);
           return;
         }
 
         if (navDirection === 'prev') {
-          loadReports(pageValue)(currentFilteredReports, currentPage - 1);
+          renderPagedReports(currentFilteredReports, currentPage - 1);
         } else if (navDirection === 'next') {
-          loadReports(pageValue)(currentFilteredReports, currentPage + 1);
+          renderPagedReports(currentFilteredReports, currentPage + 1);
         } else if (navDirection === 'first') {
-          loadReports(pageValue)(currentFilteredReports, 1);
+          renderPagedReports(currentFilteredReports, 1);
         } else if (navDirection === 'last') {
           const totalPages = Math.max(1, Math.ceil(currentFilteredReports.length / REPORTS_PER_PAGE));
-          loadReports(pageValue)(currentFilteredReports, totalPages);
+          renderPagedReports(currentFilteredReports, totalPages);
         }
       });
       reportForm.addEventListener('submit', handleSubmit);
