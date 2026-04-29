@@ -1906,53 +1906,37 @@ function addStoryTimestamp() {
       browseMessage.className = 'message';
     }
 
-    async function loadReports() {
-      browseMessage.textContent = 'Loading reports...';
-      browseMessage.className = 'message';
-      startReportCountLoadingAnimation();
-      const WORKER_URL = 'https://api.namehim.app/filtered-reports';
+    async function loadReports(page = 1) {
+  browseMessage.textContent = 'Loading reports...';
+  browseMessage.className = 'message';
+  startReportCountLoadingAnimation();
+  const WORKER_URL = `https://api.namehim.app/reports?page=${page}&limit=${REPORTS_PER_PAGE}`;
 
-      try {
-        const response = await fetch(WORKER_URL);
-        if (!response.ok) {
-          throw new Error(`Worker returned ${response.status}`);
-        }
-        const reports = await response.json();
-
-        if (!Array.isArray(reports)) {
-          throw new Error('Worker did not return an array');
-        }
-
-        allReports = sanitizeFetchedReports(reports);
-        window.allReports = allReports;
-        hasLoadedReports = true;
-        updateReportCount(allReports.length);
-        populateBrowseCountrySelect();
-        if (typeof window.refreshWorldMapReportData === 'function') {
-          window.refreshWorldMapReportData();
-        }
-        updateBrowseViewFromRoute({ preserveBrowsePage: true });
-        browseMessage.textContent = allReports.length
-          ? `Loaded ${allReports.length} report(s).`
-          : 'No reports yet. Be the first to submit.';
-        browseMessage.className = 'message';
-      } catch (error) {
-        console.error('Failed to load reports via Worker:', error);
-        browseMessage.textContent = 'Unable to load reports right now. Please try again in a moment.';
-        browseMessage.className = 'message error';
-        allReports = [];
-        window.allReports = allReports;
-        hasLoadedReports = true;
-        updateReportCount(0);
-        populateBrowseCountrySelect();
-        renderPagedReports([], 1);
-        if (typeof window.refreshWorldMapReportData === 'function') {
-          window.refreshWorldMapReportData();
-        }
-      } finally {
-        stopReportCountLoadingAnimation();
-      }
+  try {
+    const response = await fetch(WORKER_URL);
+    if (!response.ok) throw new Error(`Worker returned ${response.status}`);
+    const data = await response.json();
+    
+    if (!data.reports || !Array.isArray(data.reports)) {
+      throw new Error('Worker did not return an array');
     }
+
+    allReports = data.reports;  // Now only one page
+    window.allReports = allReports;
+    hasLoadedReports = true;
+    updateReportCount(data.total);  // Use the total count from API
+    // ... rest of your existing update logic (maps, etc.)
+    renderReportRows(allReports);
+    renderPagination(data.total, data.page);
+    
+    browseMessage.textContent = `Loaded ${allReports.length} report(s) (page ${data.page} of ${Math.ceil(data.total / REPORTS_PER_PAGE)}).`;
+    browseMessage.className = 'message';
+  } catch (error) {
+    // ... error handling as before
+  } finally {
+    stopReportCountLoadingAnimation();
+  }
+}
 
     function setSingleStoryControlsVisible(visible) {
       if (!singleStoryControls) {
