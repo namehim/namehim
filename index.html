@@ -2052,81 +2052,105 @@ function addStoryTimestamp() {
     }
 
     function openStoryForm() {
-      if (!storyForm || !showStoryFormBtn) {
-        return;
-      }
-      storyForm.classList.remove('hidden');
-      showStoryFormBtn.classList.add('hidden');
-      showStoryFormBtn.setAttribute('aria-expanded', 'true');
-        // Reset Turnstile to force it to render now that the form is visible
-  if (window.turnstile && storyForm.querySelector('.cf-turnstile')) {
-    window.turnstile.reset(storyForm.querySelector('.cf-turnstile'));
+  if (!storyForm || !showStoryFormBtn) {
+    return;
   }
-    }
+  storyForm.classList.remove('hidden');
+  showStoryFormBtn.classList.add('hidden');
+  showStoryFormBtn.setAttribute('aria-expanded', 'true');
+  // Force Turnstile to initialize/reset now that the form is visible
+  const turnstileDiv = storyForm.querySelector('.cf-turnstile');
+  if (turnstileDiv && window.turnstile) {
+    window.turnstile.reset(turnstileDiv);
+  }
+}
 
     async function submitStory(event) {
-      event.preventDefault();
-      alert("Captcha token: " + (getTurnstileToken() || "NO TOKEN FOUND"));
-      storyMessage.textContent = '';
-      storyTurnstileWarning.classList.add('hidden');
+  event.preventDefault();
+  storyMessage.textContent = '';
+  storyTurnstileWarning.classList.add('hidden');
 
-      if (!canSubmitStory()) {
-        storyRateWarning.classList.remove('hidden');
-        return;
-      }
+  if (!canSubmitStory()) {
+    storyRateWarning.classList.remove('hidden');
+    return;
+  }
 
-      const token = getTurnstileToken();
-      if (!token) {
-        storyTurnstileWarning.classList.remove('hidden');
-        return;
-      }
+  // Get the Turnstile widget element
+  const turnstileWidget = storyForm.querySelector('.cf-turnstile');
+  if (!turnstileWidget) {
+    storyMessage.textContent = 'Captcha widget missing. Please refresh the page.';
+    storyMessage.className = 'message error';
+    return;
+  }
 
-      const title = storyTitle.value.trim() || null;
-      const content = storyContent.value.trim();
-      if (content.length > MAX_COMMUNITY_POST_LENGTH) {
-        storyMessage.textContent = `Your story must be ${MAX_COMMUNITY_POST_LENGTH} characters or fewer.`;
-        storyMessage.className = 'message error';
-        return;
-      }
-      if (!content) {
-        storyMessage.textContent = 'Please write your story.';
-        storyMessage.className = 'message error';
-        return;
-      }
-
-      storySubmitBtn.disabled = true;
-
-      try {
-        const response = await fetch('https://api.namehim.app/submit-story', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            title,
-            content,
-            submitter_uuid: localStorage.getItem('submitter_id'),
-            turnstileToken: token
-          })
-        });
-        const result = await response.json();
-        if (!response.ok) {
-          throw new Error(result.error || 'Submission failed');
-        }
-
-        addStoryTimestamp();
-        storyMessage.textContent = 'Thank you. Your story has been submitted for review.';
-        storyMessage.className = 'message success';
-        storyForm.reset();
-        if (window.turnstile) window.turnstile.reset();
-        // Optionally, refresh the stories list without reload
-        if (window.location.hash === '#/community') loadApprovedStories();
-      } catch (error) {
-        console.error('Story submission error:', error);
-        storyMessage.textContent = error.message;
-        storyMessage.className = 'message error';
-      } finally {
-        storySubmitBtn.disabled = false;
-      }
+  // Try to get the token directly from Turnstile
+  let token = null;
+  if (window.turnstile) {
+    // First attempt: get existing response
+    token = window.turnstile.getResponse(turnstileWidget);
+    if (!token) {
+      // No token – reset widget to force a new challenge
+      window.turnstile.reset(turnstileWidget);
+      // Wait a moment for the challenge to load
+      await new Promise(resolve => setTimeout(resolve, 500));
+      token = window.turnstile.getResponse(turnstileWidget);
     }
+  }
+
+  if (!token) {
+    storyTurnstileWarning.classList.remove('hidden');
+    return;
+  }
+
+  const title = storyTitle.value.trim() || null;
+  const content = storyContent.value.trim();
+  if (content.length > MAX_COMMUNITY_POST_LENGTH) {
+    storyMessage.textContent = `Your story must be ${MAX_COMMUNITY_POST_LENGTH} characters or fewer.`;
+    storyMessage.className = 'message error';
+    return;
+  }
+  if (!content) {
+    storyMessage.textContent = 'Please write your story.';
+    storyMessage.className = 'message error';
+    return;
+  }
+
+  storySubmitBtn.disabled = true;
+
+  try {
+    const response = await fetch('https://api.namehim.app/submit-story', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title,
+        content,
+        submitter_uuid: localStorage.getItem('submitter_id'),
+        turnstileToken: token
+      })
+    });
+    const result = await response.json();
+    if (!response.ok) {
+      throw new Error(result.error || 'Submission failed');
+    }
+
+    addStoryTimestamp();
+    storyMessage.textContent = 'Thank you. Your story has been submitted for review.';
+    storyMessage.className = 'message success';
+    storyForm.reset();
+    // Reset Turnstile widget for next use
+    if (window.turnstile && turnstileWidget) {
+      window.turnstile.reset(turnstileWidget);
+    }
+    // Refresh stories if still on community page
+    if (window.location.hash === '#/community') loadApprovedStories();
+  } catch (error) {
+    console.error('Story submission error:', error);
+    storyMessage.textContent = error.message;
+    storyMessage.className = 'message error';
+  } finally {
+    storySubmitBtn.disabled = false;
+  }
+}
 
     async function handleSubmit(event) {
       event.preventDefault();
