@@ -30,6 +30,48 @@ export default {
   }), { headers: { "Content-Type": "application/json" } });
 }
 
+        // New paginated endpoint
+    if (request.method === "GET" && url.pathname === "/reports") {
+      const page = parseInt(url.searchParams.get("page")) || 1;
+      const limit = parseInt(url.searchParams.get("limit")) || 50;
+      const offset = (page - 1) * limit;
+
+      // Get cached reports or fetch fresh (same as before)
+      let cached = null;
+      try {
+        if (env.CACHE_KV) cached = await env.CACHE_KV.get(CACHE_KEY, "json");
+      } catch (e) { console.error("KV read error:", e); }
+      
+      let reports;
+      if (cached && Array.isArray(cached)) {
+        reports = cached;
+        ctx.waitUntil(refreshIfStale(env));
+      } else {
+        reports = await fetchAllReports(env);
+        if (reports && reports.length && env.CACHE_KV) {
+          await env.CACHE_KV.put(CACHE_KEY, JSON.stringify(reports));
+          await env.CACHE_KV.put(LAST_SUCCESS_KEY, Date.now().toString());
+        }
+      }
+      
+      if (!reports) {
+        return new Response(JSON.stringify({ error: "Service unavailable" }), { status: 503, headers: corsHeaders() });
+      }
+      
+      const total = reports.length;
+      const paginatedReports = reports.slice(offset, offset + limit);
+      
+      return new Response(JSON.stringify({
+        total,
+        page,
+        limit,
+        reports: paginatedReports
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json", ...corsHeaders() }
+      });
+    }
+
     if (request.method === "POST" && url.pathname === "/submit") {
       return handleSubmitReport(request, env);
     }
