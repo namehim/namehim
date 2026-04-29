@@ -39,6 +39,17 @@
       --danger: #ef4444;
       --success: #22c55e;
     }
+    body.light-mode {
+      --bg: #ffffff;
+      --panel: #ffffff;
+      --panel-2: #f8fafc;
+      --text: #000000;
+      --muted: #374151;
+      --border: #000000;
+      --accent: #2563eb;
+      --danger: #b91c1c;
+      --success: #166534;
+    }
 
     * { box-sizing: border-box; }
 
@@ -439,6 +450,12 @@
     }
 
     .footer-inner a { color: inherit; }
+    .theme-toggle-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+    }
+    .theme-toggle-wrap input { accent-color: var(--accent); }
 
 
     @media (max-width: 760px) {
@@ -883,6 +900,10 @@
         <a href="https://github.com/namehim/namehim">GitHub</a>
       </div>
       <span>Open source</span>
+      <label class="theme-toggle-wrap" for="theme-toggle">
+        <span>Dark mode</span>
+        <input id="theme-toggle" type="checkbox" checked />
+      </label>
     </div>
   </footer>
 
@@ -960,6 +981,30 @@
     const approvedStoriesHeading = document.getElementById('approved-stories-heading');
 
     const STORY_RATE_LIMIT_KEY = 'story_submission_timestamps';
+    const THEME_STORAGE_KEY = 'namehim_dark_mode';
+    const themeToggle = document.getElementById('theme-toggle');
+
+    function applyTheme(isDarkMode) {
+      document.body.classList.toggle('light-mode', !isDarkMode);
+      if (themeToggle) {
+        themeToggle.checked = isDarkMode;
+      }
+    }
+
+    function loadThemePreference() {
+      const storedPreference = localStorage.getItem(THEME_STORAGE_KEY);
+      applyTheme(storedPreference !== 'false');
+    }
+
+    if (themeToggle) {
+      themeToggle.addEventListener('change', () => {
+        const isDarkMode = themeToggle.checked;
+        localStorage.setItem(THEME_STORAGE_KEY, isDarkMode ? 'true' : 'false');
+        applyTheme(isDarkMode);
+      });
+    }
+
+    loadThemePreference();
 
     const US_STATES = [
       'Alabama', 'Alaska', 'Arizona', 'Arkansas', 'California', 'Colorado', 'Connecticut', 'Delaware',

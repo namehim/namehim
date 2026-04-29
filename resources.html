@@ -19,6 +19,15 @@
       --border: #334155;
       --accent: #60a5fa;
     }
+    body.light-mode {
+      --bg: #ffffff;
+      --panel: #ffffff;
+      --panel-2: #f8fafc;
+      --text: #000000;
+      --muted: #374151;
+      --border: #000000;
+      --accent: #2563eb;
+    }
     * { box-sizing: border-box; }
     body {
       margin: 0;
@@ -113,6 +122,19 @@
       font-size: 0.82rem;
       padding: 1rem 0 1.4rem;
     }
+    .footer-inner {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+    }
+    .theme-toggle-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+    }
+    .theme-toggle-wrap input { accent-color: var(--accent); }
   </style>
 </head>
 <body>
@@ -150,17 +172,44 @@
   </main>
 
   <footer>
-    <div class="container">
-      <a href="index.html#/browse">Browse</a> ·
-      <a href="index.html#/submit">Submit</a> ·
-      <a href="index.html#/community">Community</a> ·
-      <a href="resources.html">Resources</a> ·
-      <a href="about.html">About</a> ·
-      <span>© <span id="year"></span> NameHim</span>
+    <div class="container footer-inner">
+      <div>
+        <a href="index.html#/browse">Browse</a> ·
+        <a href="index.html#/submit">Submit</a> ·
+        <a href="index.html#/community">Community</a> ·
+        <a href="resources.html">Resources</a> ·
+        <a href="about.html">About</a> ·
+        <span>© <span id="year"></span> NameHim</span>
+      </div>
+      <label class="theme-toggle-wrap" for="theme-toggle">
+        <span>Dark mode</span>
+        <input id="theme-toggle" type="checkbox" checked />
+      </label>
     </div>
   </footer>
 
   <script>
+    const THEME_STORAGE_KEY = 'namehim_dark_mode';
+    const themeToggle = document.getElementById('theme-toggle');
+
+    function applyTheme(isDarkMode) {
+      document.body.classList.toggle('light-mode', !isDarkMode);
+      if (themeToggle) {
+        themeToggle.checked = isDarkMode;
+      }
+    }
+
+    const storedThemePreference = localStorage.getItem(THEME_STORAGE_KEY);
+    applyTheme(storedThemePreference !== 'false');
+
+    if (themeToggle) {
+      themeToggle.addEventListener('change', () => {
+        const isDarkMode = themeToggle.checked;
+        localStorage.setItem(THEME_STORAGE_KEY, isDarkMode ? 'true' : 'false');
+        applyTheme(isDarkMode);
+      });
+    }
+
     document.getElementById('year').textContent = new Date().getFullYear();
   </script>
 </body>
