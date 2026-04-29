@@ -851,7 +851,7 @@
       <textarea id="story-content" rows="6" maxlength="1000" required placeholder="Share your experience (no names, no identifying details)..."></textarea>
     </div>
     <div class="row">
-      <div class="cf-turnstile" data-sitekey="0x4AAAAAADCC51BDmfY6JgSc" data-theme="dark"></div>
+      <div class="cf-turnstile" id="story-turnstile" data-theme="dark"></div>
       <p id="story-turnstile-warning" class="warning hidden">Please complete the CAPTCHA.</p>
     </div>
     <p id="story-rate-warning" class="message error hidden">You've reached the limit. Please wait before submitting another story.</p>
@@ -2094,14 +2094,15 @@ function addStoryTimestamp() {
     }
 
     function openStoryForm() {
-  if (!storyForm || !showStoryFormBtn) {
-    return;
-  }
+  if (!storyForm || !showStoryFormBtn) return;
   storyForm.classList.remove('hidden');
   showStoryFormBtn.classList.add('hidden');
   showStoryFormBtn.setAttribute('aria-expanded', 'true');
-  // Force Turnstile to initialize/reset now that the form is visible
+
   const turnstileDiv = storyForm.querySelector('.cf-turnstile');
+  if (turnstileDiv && !turnstileDiv.getAttribute('data-sitekey')) {
+    turnstileDiv.setAttribute('data-sitekey', '0x4AAAAAADCC51BDmfY6JgSc');
+  }
   if (turnstileDiv && window.turnstile) {
     window.turnstile.reset(turnstileDiv);
   }
