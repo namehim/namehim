@@ -2058,6 +2058,10 @@ function addStoryTimestamp() {
       storyForm.classList.remove('hidden');
       showStoryFormBtn.classList.add('hidden');
       showStoryFormBtn.setAttribute('aria-expanded', 'true');
+        // Reset Turnstile to force it to render now that the form is visible
+  if (window.turnstile && storyForm.querySelector('.cf-turnstile')) {
+    window.turnstile.reset(storyForm.querySelector('.cf-turnstile'));
+  }
     }
 
     async function submitStory(event) {
