@@ -857,6 +857,10 @@
     <button id="submit-story-btn" class="primary" type="submit">Submit story</button>
   </form>
   <p id="story-message" class="message"></p>
+  <div class="controls">
+    <input id="story-search" class="search-input" type="text" maxlength="80" placeholder="Search approved stories by keyword..." />
+    <button id="clear-story-search" type="button">Clear</button>
+  </div>
 
   <div id="single-story-controls" class="single-report-controls hidden" style="margin-top: 2rem;">
     <button id="back-to-all-stories" type="button">← Back to all approved posts</button>
@@ -947,6 +951,8 @@
     const storyTurnstileWarning = document.getElementById('story-turnstile-warning');
     const storyRateWarning = document.getElementById('story-rate-warning');
     const storiesContainer = document.getElementById('stories-container');
+    const storySearch = document.getElementById('story-search');
+    const clearStorySearch = document.getElementById('clear-story-search');
     const singleStoryControls = document.getElementById('single-story-controls');
     const backToAllStoriesBtn = document.getElementById('back-to-all-stories');
     const approvedStoriesHeading = document.getElementById('approved-stories-heading');
@@ -972,6 +978,7 @@
     let currentPage = 1;
     let activeSingleReportId = null;
     let activeSingleStoryId = null;
+    let approvedStories = [];
     let hasLoadedReports = false;
 
     // --- ADDED: submitter_uuid management (critical fix) ---
@@ -1978,6 +1985,32 @@ function addStoryTimestamp() {
     `;
     }
 
+    function applyStorySearchFilter() {
+      if (activeSingleStoryId) {
+        return;
+      }
+      const query = String((storySearch && storySearch.value) || '').trim().toLowerCase();
+      const filteredStories = !query
+        ? approvedStories
+        : approvedStories.filter((story) => {
+          const blob = [story.title, story.content].join(' ').toLowerCase();
+          return blob.includes(query);
+        });
+
+      if (!filteredStories.length) {
+        storiesContainer.innerHTML = query
+          ? '<p>No approved stories match that keyword.</p>'
+          : '<p>No approved stories yet. Check back soon.</p>';
+        return;
+      }
+
+      let html = '';
+      for (const story of filteredStories) {
+        html += getStoryCardMarkup(story);
+      }
+      storiesContainer.innerHTML = html;
+    }
+
     async function loadApprovedStories(options = {}) {
   const storyId = options.storyId || null;
   storiesContainer.innerHTML = '<p>Loading stories...</p>';
@@ -1998,9 +2031,16 @@ function addStoryTimestamp() {
   }
 
   if (!data.length) {
+    approvedStories = [];
     storiesContainer.innerHTML = storyId
       ? '<p>Post not found. <a href="#/community">Back to all approved posts</a>.</p>'
       : '<p>No approved stories yet. Check back soon.</p>';
+    return;
+  }
+
+  approvedStories = data;
+  if (!storyId) {
+    applyStorySearchFilter();
     return;
   }
 
@@ -2513,6 +2553,18 @@ function addStoryTimestamp() {
       if (backToAllStoriesBtn) {
         backToAllStoriesBtn.addEventListener('click', function onBackToAllStoriesClick() {
           window.location.hash = '#/community';
+        });
+      }
+      if (storySearch) {
+        storySearch.addEventListener('input', applyStorySearchFilter);
+      }
+      if (clearStorySearch) {
+        clearStorySearch.addEventListener('click', function onClearStorySearchClick() {
+          if (!storySearch) {
+            return;
+          }
+          storySearch.value = '';
+          applyStorySearchFilter();
         });
       }
     }
