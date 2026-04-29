@@ -2145,11 +2145,21 @@ function addStoryTimestamp() {
   showStoryFormBtn.setAttribute('aria-expanded', 'true');
 
   const turnstileDiv = storyForm.querySelector('.cf-turnstile');
-  if (turnstileDiv && !turnstileDiv.getAttribute('data-sitekey')) {
+  if (!turnstileDiv) return;
+
+  // Ensure sitekey is set (only needed once)
+  if (!turnstileDiv.getAttribute('data-sitekey')) {
     turnstileDiv.setAttribute('data-sitekey', '0x4AAAAAADCC51BDmfY6JgSc');
   }
-  if (turnstileDiv && window.turnstile) {
+
+  // Check if Turnstile already rendered a widget inside this div
+  const existingWidget = turnstileDiv.querySelector('iframe');
+  if (existingWidget && window.turnstile) {
+    // Widget exists – just reset it
     window.turnstile.reset(turnstileDiv);
+  } else if (window.turnstile) {
+    // Widget does not exist – render it now
+    window.turnstile.render(turnstileDiv);
   }
 }
 
