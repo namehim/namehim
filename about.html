@@ -36,6 +36,14 @@
       --muted: #9ca3af;
       --border: #334155;
     }
+    body.light-mode {
+      --bg: #ffffff;
+      --panel: #ffffff;
+      --panel-2: #f8fafc;
+      --text: #000000;
+      --muted: #374151;
+      --border: #000000;
+    }
 
     * { box-sizing: border-box; }
 
@@ -202,6 +210,12 @@
     .footer-inner a {
       color: inherit;
     }
+    .theme-toggle-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+    }
+    .theme-toggle-wrap input { accent-color: #2563eb; }
 
     @media (max-width: 760px) {
       .container {
@@ -339,11 +353,36 @@
         <a href="https://github.com/namehim/namehim">GitHub</a>
       </div>
       <span>Open source</span>
+      <label class="theme-toggle-wrap" for="theme-toggle">
+        <span>Dark mode</span>
+        <input id="theme-toggle" type="checkbox" checked />
+      </label>
     </div>
   </footer>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
+    const THEME_STORAGE_KEY = 'namehim_dark_mode';
+    const themeToggle = document.getElementById('theme-toggle');
+
+    function applyTheme(isDarkMode) {
+      document.body.classList.toggle('light-mode', !isDarkMode);
+      if (themeToggle) {
+        themeToggle.checked = isDarkMode;
+      }
+    }
+
+    const storedThemePreference = localStorage.getItem(THEME_STORAGE_KEY);
+    applyTheme(storedThemePreference !== 'false');
+
+    if (themeToggle) {
+      themeToggle.addEventListener('change', () => {
+        const isDarkMode = themeToggle.checked;
+        localStorage.setItem(THEME_STORAGE_KEY, isDarkMode ? 'true' : 'false');
+        applyTheme(isDarkMode);
+      });
+    }
+
     function formatReportTotal(total) {
       const parsedTotal = Number(total) || 0;
       return parsedTotal.toLocaleString('en-US');
