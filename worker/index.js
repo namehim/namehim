@@ -6,6 +6,17 @@ var CACHE_KEY = "reports_cache";
 var REFRESH_LOCK_KEY = "reports_refreshing";
 var LAST_SUCCESS_KEY = "reports_last_success";
 
+// US state names set – used for counting reports per state
+const US_STATES_SET = new Set([
+  'Alabama', 'Alaska', 'Arizona', 'Arkansas', 'California', 'Colorado', 'Connecticut', 'Delaware',
+  'Florida', 'Georgia', 'Hawaii', 'Idaho', 'Illinois', 'Indiana', 'Iowa', 'Kansas', 'Kentucky',
+  'Louisiana', 'Maine', 'Maryland', 'Massachusetts', 'Michigan', 'Minnesota', 'Mississippi',
+  'Missouri', 'Montana', 'Nebraska', 'Nevada', 'New Hampshire', 'New Jersey', 'New Mexico',
+  'New York', 'North Carolina', 'North Dakota', 'Ohio', 'Oklahoma', 'Oregon', 'Pennsylvania',
+  'Rhode Island', 'South Carolina', 'South Dakota', 'Tennessee', 'Texas', 'Utah', 'Vermont',
+  'Virginia', 'Washington', 'West Virginia', 'Wisconsin', 'Wyoming'
+]);
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -24,19 +35,18 @@ export default {
     }
 
     if (request.method === "GET" && url.pathname === "/version") {
-  return new Response(JSON.stringify({
-    commit: env.COMMIT_HASH || "unknown",
-    deployed_at: env.DEPLOYED_AT || "unknown"
-  }), { headers: { "Content-Type": "application/json" } });
-}
+      return new Response(JSON.stringify({
+        commit: env.COMMIT_HASH || "unknown",
+        deployed_at: env.DEPLOYED_AT || "unknown"
+      }), { headers: { "Content-Type": "application/json" } });
+    }
 
-        // New paginated endpoint
+    // 🚀 GET /reports – paginated reports
     if (request.method === "GET" && url.pathname === "/reports") {
       const page = parseInt(url.searchParams.get("page")) || 1;
       const limit = parseInt(url.searchParams.get("limit")) || 50;
       const offset = (page - 1) * limit;
 
-      // Get cached reports or fetch fresh (same as before)
       let cached = null;
       try {
         if (env.CACHE_KV) cached = await env.CACHE_KV.get(CACHE_KEY, "json");
@@ -72,6 +82,56 @@ export default {
       });
     }
 
+    // 🆕 GET /stats – aggregated counts for maps (fast, uses cached reports)
+    if (request.method === "GET" && url.pathname === "/stats") {
+      let cached = null;
+      try {
+        if (env.CACHE_KV) cached = await env.CACHE_KV.get(CACHE_KEY, "json");
+      } catch (e) { console.error("KV read error:", e); }
+      
+      let reports;
+      if (cached && Array.isArray(cached)) {
+        reports = cached;
+        ctx.waitUntil(refreshIfStale(env));
+      } else {
+        reports = await fetchAllReports(env);
+        if (reports && reports.length && env.CACHE_KV) {
+          await env.CACHE_KV.put(CACHE_KEY, JSON.stringify(reports));
+          await env.CACHE_KV.put(LAST_SUCCESS_KEY, Date.now().toString());
+        }
+      }
+      
+      if (!reports) {
+        return new Response(JSON.stringify({ error: "Service unavailable" }), { status: 503, headers: corsHeaders() });
+      }
+      
+      // Count reports per state (US only) and per country
+      const stateCounts = {};
+      const countryCounts = {};
+      
+      for (const r of reports) {
+        // Country counts
+        const country = r.country;
+        if (country) {
+          countryCounts[country] = (countryCounts[country] || 0) + 1;
+        }
+        // State counts (only if state is one of the US states)
+        const state = r.state;
+        if (state && US_STATES_SET.has(state)) {
+          stateCounts[state] = (stateCounts[state] || 0) + 1;
+        }
+      }
+      
+      return new Response(JSON.stringify({
+        total: reports.length,
+        stateCounts,
+        countryCounts
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json", ...corsHeaders() }
+      });
+    }
+
     if (request.method === "POST" && url.pathname === "/submit") {
       return handleSubmitReport(request, env);
     }
@@ -79,7 +139,7 @@ export default {
       return handleSubmitStory(request, env);
     }
 
-    // ----- GET /filtered-reports (or root) -----
+    // ----- GET /filtered-reports (or root)  (full list, legacy) -----
     let cached = null;
     try {
       if (env.CACHE_KV) {
@@ -101,7 +161,6 @@ export default {
       });
     }
 
-    // No cache or cache invalid – fetch fresh
     try {
       const reports = await fetchAllReports(env);
       if (reports && reports.length) {
@@ -145,7 +204,6 @@ async function handleSubmitReport(request, env) {
   const token = payload.turnstileToken;
   if (!token) return errorResponse("CAPTCHA token missing", 400);
 
-  // Verify Turnstile
   const verifyRes = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
     method: "POST",
     body: new URLSearchParams({ secret: env.TURNSTILE_SECRET_KEY, response: token }),
@@ -165,7 +223,6 @@ async function handleSubmitReport(request, env) {
     return errorResponse("Submission failed", 500);
   }
 
-  // Invalidate cache after successful insert
   if (env.CACHE_KV) {
     await env.CACHE_KV.delete(CACHE_KEY);
     await env.CACHE_KV.delete(LAST_SUCCESS_KEY);
@@ -278,7 +335,6 @@ async function fetchAllReports(env) {
   const MAX_ATTEMPTS = 2;
   const TIMEOUT_MS = 60000;
 
-  // First, fetch blocklist for filtering
   const blockRes = await supabaseFetch(supabaseUrl, supabaseKey, "/rest/v1/blocked_names?select=name");
   let blockedSet = new Set();
   if (blockRes.ok) {
@@ -314,7 +370,6 @@ async function fetchAllReports(env) {
     }
     if (!success || !batch.length) break;
 
-    // Filter each report (blocked names + malicious patterns)
     const isCleanReport = (r) => {
       if (blockedSet.has(r.name.toLowerCase())) return false;
       const cats = r.categories || [];
