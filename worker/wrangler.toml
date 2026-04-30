@@ -2,3 +2,6 @@ compatibility_date = "2026-04-29"
 name = "namehimblocklist"
 main = "index.js"
 
+kv_namespaces = [
+  { binding = "CACHE_KV", id = "NAMEHIM_CACHE" }
+]
