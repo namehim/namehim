@@ -360,16 +360,14 @@
     </div>
   </footer>
 
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
+    // Dark mode (unchanged)
     const THEME_STORAGE_KEY = 'namehim_dark_mode';
     const themeToggle = document.getElementById('theme-toggle');
 
     function applyTheme(isDarkMode) {
       document.body.classList.toggle('light-mode', !isDarkMode);
-      if (themeToggle) {
-        themeToggle.checked = isDarkMode;
-      }
+      if (themeToggle) themeToggle.checked = isDarkMode;
     }
 
     const storedThemePreference = localStorage.getItem(THEME_STORAGE_KEY);
@@ -383,86 +381,57 @@
       });
     }
 
+    // Helper for formatting numbers
     function formatReportTotal(total) {
       const parsedTotal = Number(total) || 0;
       return parsedTotal.toLocaleString('en-US');
     }
 
+    // Loading animation (unchanged)
     const loadingDots = ['.', '..', '...'];
     let loadingDotIndex = 0;
     let reportCountLoadingInterval = null;
 
-    function startReportCountLoadingAnimation(reportCount) {
-      if (!reportCount || reportCountLoadingInterval) {
-        return;
-      }
-
-      reportCount.textContent = 'Loading reports and counting' + loadingDots[loadingDotIndex];
+    function startReportCountLoadingAnimation(element) {
+      if (!element || reportCountLoadingInterval) return;
+      element.textContent = 'Loading reports and counting' + loadingDots[0];
       reportCountLoadingInterval = setInterval(() => {
         loadingDotIndex = (loadingDotIndex + 1) % loadingDots.length;
-        reportCount.textContent = 'Loading reports and counting' + loadingDots[loadingDotIndex];
+        element.textContent = 'Loading reports and counting' + loadingDots[loadingDotIndex];
       }, 1000);
     }
 
     function stopReportCountLoadingAnimation() {
-      if (!reportCountLoadingInterval) {
-        return;
+      if (reportCountLoadingInterval) {
+        clearInterval(reportCountLoadingInterval);
+        reportCountLoadingInterval = null;
+        loadingDotIndex = 0;
       }
-
-      clearInterval(reportCountLoadingInterval);
-      reportCountLoadingInterval = null;
-      loadingDotIndex = 0;
     }
 
-    const SUPABASE_URL = 'https://cmmggaprguusffiphegy.supabase.co';
-    const SUPABASE_ANON_KEY = 'sb_publishable_G9Doh6gciyFVT1NDum55ZA_8ryL3fOw';
-    const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
+    // Fast report count using /stats endpoint
     async function loadReportCount() {
-      const reportCount = document.getElementById('report-count');
-      if (!reportCount) {
-        return;
-      }
-      startReportCountLoadingAnimation(reportCount);
+      const reportCountElement = document.getElementById('report-count');
+      if (!reportCountElement) return;
 
-      const WORKER_URL = 'https://api.namehim.app/filtered-reports';
+      startReportCountLoadingAnimation(reportCountElement);
 
       try {
-        const response = await fetch(WORKER_URL);
-        if (!response.ok) {
-          throw new Error('Worker returned ' + response.status);
-        }
-
-        const reports = await response.json();
-        if (!Array.isArray(reports)) {
-          throw new Error('Worker did not return an array');
-        }
-
-        let totalReports = reports.length;
-
-        try {
-          const { count, error: countError } = await supabaseClient
-            .from('reports')
-            .select('*', { count: 'exact', head: true });
-
-          if (countError) {
-            throw countError;
-          }
-
-          totalReports = Math.max(totalReports, Number(count) || 0);
-        } catch (countFallbackError) {
-          console.warn('Unable to fetch exact report count, using worker total:', countFallbackError);
-        }
-
-        reportCount.textContent = formatReportTotal(totalReports) + ' reports and counting...';
+        const response = await fetch('https://api.namehim.app/stats');
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        const total = data.total || 0;
+        reportCountElement.textContent = formatReportTotal(total) + ' reports and counting...';
       } catch (error) {
-        console.error('Failed to load report count:', error);
-        reportCount.textContent = '0 reports and counting...';
+        console.error('Failed to load report count from /stats:', error);
+        // Fallback: keep showing loading animation? We'll show zero.
+        reportCountElement.textContent = '0 reports and counting...';
       } finally {
         stopReportCountLoadingAnimation();
       }
     }
 
+    // Start the count load
     loadReportCount();
   </script>
 </body>
