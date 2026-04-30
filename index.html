@@ -1027,6 +1027,8 @@
     let activeSingleStoryId = null;
     let approvedStories = [];
     let hasLoadedReports = false;
+    let allTotalCount = 0;   // total number of reports (from paginated API)
+
 
     // --- ADDED: submitter_uuid management (critical fix) ---
     function getOrCreateSubmitterId() {
