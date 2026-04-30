@@ -1954,53 +1954,89 @@ function addStoryTimestamp() {
       browseMessage.className = 'message';
     }
 
-    async function loadReports() {
-      browseMessage.textContent = 'Loading reports...';
-      browseMessage.className = 'message';
-      startReportCountLoadingAnimation();
-      const WORKER_URL = 'https://api.namehim.app/filtered-reports';
+    async function loadReports(page = 1) {
+  browseMessage.textContent = 'Loading reports...';
+  browseMessage.className = 'message';
+  startReportCountLoadingAnimation();
 
-      try {
-        const response = await fetch(WORKER_URL);
-        if (!response.ok) {
-          throw new Error(`Worker returned ${response.status}`);
-        }
-        const reports = await response.json();
+  const limit = REPORTS_PER_PAGE;
+  const WORKER_URL = `https://api.namehim.app/reports?page=${page}&limit=${limit}`;
 
-        if (!Array.isArray(reports)) {
-          throw new Error('Worker did not return an array');
-        }
+  try {
+    const response = await fetch(WORKER_URL);
+    if (!response.ok) throw new Error(`Worker returned ${response.status}`);
+    const data = await response.json();
 
-        allReports = sanitizeFetchedReports(reports);
-        window.allReports = allReports;
-        hasLoadedReports = true;
-        updateReportCount(allReports.length);
-        populateBrowseCountrySelect();
-        if (typeof window.refreshWorldMapReportData === 'function') {
-          window.refreshWorldMapReportData();
-        }
-        updateBrowseViewFromRoute({ preserveBrowsePage: true });
-        browseMessage.textContent = allReports.length
-          ? `Loaded ${allReports.length} report(s).`
-          : 'No reports yet. Be the first to submit.';
-        browseMessage.className = 'message';
-      } catch (error) {
-        console.error('Failed to load reports via Worker:', error);
-        browseMessage.textContent = 'Unable to load reports right now. Please try again in a moment.';
-        browseMessage.className = 'message error';
-        allReports = [];
-        window.allReports = allReports;
-        hasLoadedReports = true;
-        updateReportCount(0);
-        populateBrowseCountrySelect();
-        renderPagedReports([], 1);
-        if (typeof window.refreshWorldMapReportData === 'function') {
-          window.refreshWorldMapReportData();
-        }
-      } finally {
-        stopReportCountLoadingAnimation();
-      }
+    if (!data.reports || !Array.isArray(data.reports)) {
+      throw new Error('Invalid response from paginated endpoint');
     }
+
+    // Store only the current page of reports
+    allReports = data.reports;
+    window.allReports = allReports;
+    allTotalCount = data.total;
+    hasLoadedReports = true;
+
+    updateReportCount(allTotalCount);                     // show total count
+    renderReportRows(allReports);                         // display the page
+    renderPagination(allTotalCount, data.page);           // update pagination buttons
+
+    browseMessage.textContent = `Loaded ${allReports.length} report(s) (page ${data.page} of ${Math.ceil(allTotalCount / limit)}).`;
+    browseMessage.className = 'message';
+
+    // 🔁 Background fetch for maps (needs full list) – won't block the UI
+    fetchFullReportsForMaps();
+
+  } catch (error) {
+    console.error('Pagination failed, falling back to full fetch:', error);
+    // Fallback to the original full fetch method
+    await loadReportsFull();
+  } finally {
+    stopReportCountLoadingAnimation();
+  }
+}
+
+// Original full fetch (kept for fallback and map data)
+async function loadReportsFull() {
+  const WORKER_URL = 'https://api.namehim.app/filtered-reports';
+  try {
+    const response = await fetch(WORKER_URL);
+    if (!response.ok) throw new Error(`Worker returned ${response.status}`);
+    const reports = await response.json();
+    if (!Array.isArray(reports)) throw new Error('Worker did not return an array');
+    allReports = sanitizeFetchedReports(reports);
+    window.allReports = allReports;
+    allTotalCount = allReports.length;
+    hasLoadedReports = true;
+    updateReportCount(allTotalCount);
+    renderPagedReports(allReports, 1);
+    if (typeof window.refreshWorldMapReportData === 'function') window.refreshWorldMapReportData();
+    browseMessage.textContent = `Loaded ${allReports.length} report(s).`;
+    browseMessage.className = 'message';
+  } catch (error) {
+    console.error('Failed to load reports:', error);
+    browseMessage.textContent = 'Unable to load reports right now. Please try again in a moment.';
+    browseMessage.className = 'message error';
+    allReports = [];
+    updateReportCount(0);
+    renderPagedReports([], 1);
+  }
+}
+
+// Fetch full list only for maps (runs in background)
+async function fetchFullReportsForMaps() {
+  try {
+    const response = await fetch('https://api.namehim.app/filtered-reports');
+    if (!response.ok) return;
+    const reports = await response.json();
+    window.fullReportsForMaps = sanitizeFetchedReports(reports);
+    if (typeof window.refreshWorldMapReportData === 'function') {
+      window.refreshWorldMapReportData();
+    }
+  } catch (e) {
+    console.warn("Could not fetch full reports for maps:", e);
+  }
+}
 
     function setSingleStoryControlsVisible(visible) {
       if (!singleStoryControls) {
@@ -2468,7 +2504,7 @@ function addStoryTimestamp() {
       renderCategories();
       updateRateLimitUI();
       renderRoute();
-      loadReports();
+      loadReports(1);
       setupReportActionHandler();
       startRealtimeUpdates();
       renderStateField();
@@ -2570,29 +2606,29 @@ function addStoryTimestamp() {
         applySearchFilter();
       };
       browsePagination.addEventListener('click', function onPaginationClick(event) {
-        const target = event.target.closest('button');
-        if (!target) {
-          return;
-        }
+  const target = event.target.closest('button');
+  if (!target) return;
 
-        const pageValue = Number(target.getAttribute('data-page'));
-        const navDirection = target.getAttribute('data-page-nav');
+  const pageValue = Number(target.getAttribute('data-page'));
+  const navDirection = target.getAttribute('data-page-nav');
 
-        if (Number.isInteger(pageValue) && pageValue > 0) {
-          renderPagedReports(currentFilteredReports, pageValue);
-          return;
-        }
+  // Get the current page from the active button
+  const activeBtn = browsePagination.querySelector('button.active');
+  let currentPage = activeBtn ? parseInt(activeBtn.textContent) : 1;
 
-        if (navDirection === 'prev') {
-          renderPagedReports(currentFilteredReports, currentPage - 1);
-        } else if (navDirection === 'next') {
-          renderPagedReports(currentFilteredReports, currentPage + 1);
-        } else if (navDirection === 'first') {
-          renderPagedReports(currentFilteredReports, 1);
-        } else if (navDirection === 'last') {
-          const totalPages = Math.max(1, Math.ceil(currentFilteredReports.length / REPORTS_PER_PAGE));
-          renderPagedReports(currentFilteredReports, totalPages);
-        }
+  if (Number.isInteger(pageValue) && pageValue > 0) {
+    loadReports(pageValue);
+  } else if (navDirection === 'prev' && currentPage > 1) {
+    loadReports(currentPage - 1);
+  } else if (navDirection === 'next') {
+    const totalPages = Math.ceil(allTotalCount / REPORTS_PER_PAGE);
+    if (currentPage < totalPages) loadReports(currentPage + 1);
+  } else if (navDirection === 'first') {
+    loadReports(1);
+  } else if (navDirection === 'last') {
+    const totalPages = Math.ceil(allTotalCount / REPORTS_PER_PAGE);
+    loadReports(totalPages);
+  }
       });
       reportForm.addEventListener('submit', handleSubmit);
       storyForm.addEventListener('submit', submitStory);
