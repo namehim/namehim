@@ -1029,6 +1029,8 @@
     let approvedStories = [];
     let hasLoadedReports = false;
     let allTotalCount = 0;   // total number of reports (from paginated API)
+    let stateCounts = {};
+    let countryCounts = {};
 
 
     // --- ADDED: submitter_uuid management (critical fix) ---
@@ -1984,9 +1986,6 @@ function addStoryTimestamp() {
     browseMessage.textContent = `Loaded ${allReports.length} report(s) (page ${data.page} of ${Math.ceil(allTotalCount / limit)}).`;
     browseMessage.className = 'message';
 
-    // 🔁 Background fetch for maps (needs full list) – won't block the UI
-    fetchFullReportsForMaps();
-
   } catch (error) {
     console.error('Pagination failed, falling back to full fetch:', error);
     // Fallback to the original full fetch method
@@ -1996,7 +1995,7 @@ function addStoryTimestamp() {
   }
 }
 
-// Original full fetch (kept for fallback and map data)
+// Original full fetch (kept for fallback)
 async function loadReportsFull() {
   const WORKER_URL = 'https://api.namehim.app/filtered-reports';
   try {
@@ -2010,7 +2009,6 @@ async function loadReportsFull() {
     hasLoadedReports = true;
     updateReportCount(allTotalCount);
     renderPagedReports(allReports, 1);
-    if (typeof window.refreshWorldMapReportData === 'function') window.refreshWorldMapReportData();
     browseMessage.textContent = `Loaded ${allReports.length} report(s).`;
     browseMessage.className = 'message';
   } catch (error) {
@@ -2023,18 +2021,17 @@ async function loadReportsFull() {
   }
 }
 
-// Fetch full list only for maps (runs in background)
-async function fetchFullReportsForMaps() {
+async function loadMapStats() {
   try {
-    const response = await fetch('https://api.namehim.app/filtered-reports');
-    if (!response.ok) return;
-    const reports = await response.json();
-    window.fullReportsForMaps = sanitizeFetchedReports(reports);
-    if (typeof window.refreshWorldMapReportData === 'function') {
-      window.refreshWorldMapReportData();
-    }
+    const response = await fetch('https://api.namehim.app/stats');
+    if (!response.ok) throw new Error(`Stats endpoint returned ${response.status}`);
+    const data = await response.json();
+    stateCounts = data && data.stateCounts && typeof data.stateCounts === 'object' ? data.stateCounts : {};
+    countryCounts = data && data.countryCounts && typeof data.countryCounts === 'object' ? data.countryCounts : {};
+    updateUSMapWithCounts();
+    updateWorldMapWithCounts();
   } catch (e) {
-    console.warn("Could not fetch full reports for maps:", e);
+    console.warn('Could not load map stats:', e);
   }
 }
 
@@ -2505,6 +2502,7 @@ async function fetchFullReportsForMaps() {
       updateRateLimitUI();
       renderRoute();
       loadReports(1);
+      loadMapStats();
       setupReportActionHandler();
       startRealtimeUpdates();
       renderStateField();
@@ -2749,9 +2747,8 @@ function getReportCountByCountryName(countryName) {
   if (!target) {
     return 0;
   }
-
-  return allReports.reduce((count, report) => {
-    return count + (normalizeCountryForFiltering(report && report.country) === target ? 1 : 0);
+  return Object.keys(countryCounts).reduce((count, key) => {
+    return count + (normalizeCountryForFiltering(key) === target ? Number(countryCounts[key]) || 0 : 0);
   }, 0);
 }
 
@@ -2776,6 +2773,26 @@ function updateWorldMapStateDescriptions() {
     stateSpecific[stateId].description = 'Reports: ' + count;
     stateSpecific[stateId].url = '';
   });
+}
+
+function updateUSMapWithCounts() {
+  const mapData = window.simplemaps_usmap_mapdata;
+  const stateSpecific = (mapData && mapData.state_specific) || {};
+  Object.keys(stateSpecific).forEach((stateId) => {
+    const stateName = stateSpecific[stateId] && stateSpecific[stateId].name;
+    const count = stateCounts[stateName] || 0;
+    stateSpecific[stateId].description = 'Reports: ' + count;
+  });
+  if (window.simplemaps_usmap && typeof window.simplemaps_usmap.refresh === 'function') {
+    window.simplemaps_usmap.refresh();
+  }
+}
+
+function updateWorldMapWithCounts() {
+  updateWorldMapStateDescriptions();
+  if (window.simplemaps_worldmap && typeof window.simplemaps_worldmap.refresh === 'function') {
+    window.simplemaps_worldmap.refresh();
+  }
 }
 
 function applyWorldMapSelectionById(stateId, shouldFilter) {
