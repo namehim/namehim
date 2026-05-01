@@ -223,12 +223,31 @@
     }
 
     .table-guidance {
-      margin: 0.85rem 0 0.65rem;
+      margin: 0.85rem 0 0.4rem;
       font-size: 0.92rem;
       color: #cbd5e1;
+      line-height: 1.5;
     }
 
-    .table-guidance span {
+    .table-guidance-filters {
+      margin-bottom: 0.65rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+
+    .table-guidance-filters > * {
+      vertical-align: middle;
+    }
+
+    .inline-filters {
+      display: inline-flex;
+      gap: 0.5rem;
+      align-items: center;
+    }
+
+    .table-guidance-filters span {
       color: var(--muted);
       font-size: 0.88rem;
     }
@@ -356,7 +375,7 @@
       border: 1px solid var(--border);
       border-radius: 0.7rem;
       padding: 1rem;
-      max-width: 720px;
+      width: 100%;
     }
 
     .row { margin-bottom: 0.9rem; }
@@ -369,9 +388,25 @@
     }
 
     .grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
+      display: flex;
+      flex-wrap: nowrap;
       gap: 0.8rem;
+      margin-bottom: 0.9rem;
+    }
+
+    .grid > .row {
+      flex: 1;
+      margin-bottom: 0;
+      min-width: 0; /* Prevents flex children from overflowing */
+    }
+
+    @media (max-width: 600px) {
+      .grid {
+        flex-wrap: wrap;
+      }
+      .grid > .row {
+        flex: 1 1 100%;
+      }
     }
 
     fieldset {
@@ -421,6 +456,7 @@
     .map-toggle-row .map-toggle-wrap {
       margin-bottom: 0;
       flex: 1;
+      display: flex;
     }
 
     .map-count-note {
@@ -433,8 +469,8 @@
     }
 
     .map-toggle-btn {
+      width: 100%;
       min-width: 0;
-      flex: 1;
     }
 
     #map {
@@ -617,16 +653,22 @@
         </div>
         <p class="table-guidance">
           Select a country or state from the list or click show map to see results for specific locations.
-          <select id="browse-country-select" aria-label="Select a country to filter reports">
-            <option value="">Select a country</option>
-          </select>
-          <span id="browse-state-select-wrap">
-            <select id="browse-state-select" aria-label="Select a state to filter reports">
-              <option value="">Select a state</option>
-            </select>
+        </p>
+        <div class="table-guidance-filters">
+          <span class="inline-filters">
+            <span id="browse-country-select-wrap">
+              <select id="browse-country-select" aria-label="Select a country to filter reports">
+                <option value="">Select a country</option>
+              </select>
+            </span>
+            <span id="browse-state-select-wrap">
+              <select id="browse-state-select" aria-label="Select a state to filter reports">
+                <option value="">Select a state</option>
+              </select>
+            </span>
           </span>
           <span>(full list below).</span>
-        </p>
+        </div>
         <div class="map-toggle-row">
           <div class="map-toggle-buttons">
             <div class="map-toggle-wrap">
@@ -666,15 +708,11 @@
             <input id="name" type="text" maxlength="20" required inputmode="text" />
           </div>
 
-          <div class="row">
-            <label for="city">City *</label>
-            <input id="city" type="text" maxlength="20" required inputmode="text" />
-          </div>
-
-          <div class="row">
-            <label for="country">Country *</label>
-            <select id="country" required>
-              <option value="">Select a country</option>
+          <div class="grid" id="country-state-grid">
+            <div class="row">
+              <label for="country">Country *</label>
+              <select id="country" required>
+                <option value="">Select a country</option>
               <option value="Afghanistan">Afghanistan</option>
               <option value="Albania">Albania</option>
               <option value="Algeria">Algeria</option>
@@ -862,7 +900,7 @@
               <option value="United Arab Emirates">United Arab Emirates</option>
               <option value="United Kingdom">United Kingdom</option>
               <option value="United Republic of Tanzania">United Republic of Tanzania</option>
-              <option value="USA">USA</option>
+              <option value="USA" selected>USA</option>
               <option value="Uruguay">Uruguay</option>
               <option value="Uzbekistan">Uzbekistan</option>
               <option value="Vanuatu">Vanuatu</option>
@@ -872,11 +910,17 @@
               <option value="Zambia">Zambia</option>
               <option value="Zimbabwe">Zimbabwe</option>
             </select>
-          </div>
+            </div>
 
-          <div id="state-field-container" class="row">
-            <label for="state">State / Province (optional)</label>
-            <input id="state" type="text" maxlength="20" placeholder="State / Province (optional)" inputmode="text" />
+            <div id="state-field-container" class="row">
+              <label for="state">State / Province (optional)</label>
+              <input id="state" type="text" maxlength="20" placeholder="State / Province (optional)" inputmode="text" />
+            </div>
+
+            <div class="row">
+              <label for="city">City *</label>
+              <input id="city" type="text" maxlength="20" required inputmode="text" />
+            </div>
           </div>
 
           <fieldset>
@@ -905,7 +949,7 @@
   <p>Share your story or just a few words anonymously, without names. This is a space for hope, encouragement, and survivor experiences. No names of abusers or yourself. Your post will be reviewed before appearing.</p>
   <button id="show-story-form-btn" type="button" aria-expanded="false" aria-controls="story-form">Submit post</button>
   
-  <form id="story-form" class="panel hidden" style="max-width: 720px;">
+  <form id="story-form" class="panel hidden">
     <div class="row">
       <label for="story-title">Title (optional)</label>
       <input id="story-title" type="text" maxlength="1000" placeholder="e.g., A message of hope" />
@@ -1349,7 +1393,14 @@
       const selectedCountry = String(browseCountrySelect.value || '').trim().toLowerCase();
       const shouldShowStateFilter = !selectedCountry || isUnitedStatesCountryValue(selectedCountry);
 
-      browseStateSelectWrap.classList.toggle('hidden', !shouldShowStateFilter);
+      if (browseStateSelectWrap) {
+        browseStateSelectWrap.classList.toggle('hidden', !shouldShowStateFilter);
+      }
+
+      const browseCountrySelectWrap = document.getElementById('browse-country-select-wrap');
+      if (browseCountrySelectWrap) {
+        browseCountrySelectWrap.classList.toggle('hidden', false);
+      }
 
       if (!shouldShowStateFilter && browseStateSelect) {
         browseStateSelect.value = '';
@@ -1376,6 +1427,7 @@
       const incomingValue = String(countryName || '').trim();
       if (!incomingValue) {
         browseCountrySelect.value = '';
+        updateBrowseLocationFiltersUI(); // Added trigger
         return;
       }
 
@@ -1385,6 +1437,7 @@
       });
 
       browseCountrySelect.value = matchingOption ? matchingOption.value : '';
+      updateBrowseLocationFiltersUI(); // Added trigger
     }
 
     window.setCountryDropdownValue = setCountryDropdownValue;
@@ -2591,6 +2644,7 @@ async function loadMapStats() {
       renderStateField();
       populateBrowseStateSelect();
       populateBrowseCountrySelect();
+      setCountryDropdownValue('USA');
       updateBrowseLocationFiltersUI();
       initMapToggle();
 
