@@ -1156,6 +1156,60 @@
       return cleaned;
     }
 
+    function persistMapCounts() {
+      try {
+        localStorage.setItem(MAP_COUNTS_STORAGE_KEY, JSON.stringify({
+          stateCounts,
+          countryCounts,
+          savedAt: Date.now()
+        }));
+      } catch (error) {
+        console.warn('Could not persist map counts:', error);
+      }
+    }
+
+    function restoreMapCounts() {
+      try {
+        const raw = localStorage.getItem(MAP_COUNTS_STORAGE_KEY);
+        if (!raw) return;
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+          if (parsed.stateCounts && typeof parsed.stateCounts === 'object') {
+            stateCounts = parsed.stateCounts;
+          }
+          if (parsed.countryCounts && typeof parsed.countryCounts === 'object') {
+            countryCounts = parsed.countryCounts;
+          }
+          window.stateCounts = stateCounts;
+          window.countryCounts = countryCounts;
+        }
+      } catch (error) {
+        console.warn('Could not restore map counts:', error);
+      }
+    }
+
+    function rebuildCountsFromReports(reports) {
+      const nextStateCounts = {};
+      const nextCountryCounts = {};
+      (Array.isArray(reports) ? reports : []).forEach((report) => {
+        const state = String((report && report.state) || '').trim();
+        const country = String((report && report.country) || '').trim();
+        if (state) {
+          nextStateCounts[state] = (nextStateCounts[state] || 0) + 1;
+        }
+        if (country) {
+          nextCountryCounts[country] = (nextCountryCounts[country] || 0) + 1;
+        }
+      });
+      stateCounts = nextStateCounts;
+      countryCounts = nextCountryCounts;
+      window.stateCounts = stateCounts;
+      window.countryCounts = countryCounts;
+      persistMapCounts();
+      updateUSMapWithCounts();
+      updateWorldMapWithCounts();
+    }
+
     function validateCategorySelection(rawCategories) {
       if (!Array.isArray(rawCategories) || rawCategories.length === 0) {
         return { valid: false, reason: 'missing' };
@@ -2093,6 +2147,7 @@ async function loadReportsFull() {
     window.allReports = allReports;
     allTotalCount = allReports.length;
     hasLoadedReports = true;
+    rebuildCountsFromReports(allReports);
     updateReportCount(allTotalCount);
     renderPagedReports(allReports, 1);
     browseMessage.textContent = `Loaded ${allReports.length} report(s).`;
@@ -2120,6 +2175,12 @@ async function loadMapStats() {
     updateWorldMapWithCounts();
   } catch (e) {
     console.warn('Could not load map stats:', e);
+    if ((!stateCounts || !Object.keys(stateCounts).length) && (!countryCounts || !Object.keys(countryCounts).length)) {
+      const loaded = await ensureFullListLoaded();
+      if (loaded) {
+        rebuildCountsFromReports(fullReportsList);
+      }
+    }
   }
 }
 
@@ -2586,6 +2647,7 @@ async function loadMapStats() {
     function init() {
       // Ensure a submitter_id exists right away (used for rate limits? no, but good practice)
       getOrCreateSubmitterId();
+      restoreMapCounts();
       rebuildAllowedCountries();
       renderCategories();
       updateRateLimitUI();
