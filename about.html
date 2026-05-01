@@ -182,12 +182,13 @@
     }
 
 
-    .poster-frame {
+    .poster-image {
       width: 100%;
-      height: 900px;
+      height: auto;
       border: 1px solid var(--border);
       border-radius: 0.6rem;
       margin-top: 0.5rem;
+      display: block;
     }
 
     .poster-download {
@@ -363,7 +364,7 @@
 
         <section>
           <h3>User submitted poster</h3>
-          <iframe class="poster-frame" src="NameHimPoster.pdf" title="User submitted poster PDF"></iframe>
+          <img class="poster-image" src="NameHimPoster.png" alt="User submitted NameHim poster" />
           <a class="poster-download" href="NameHimPoster.pdf" download>Download poster PDF</a>
         </section>
 
