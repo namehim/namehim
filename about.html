@@ -182,16 +182,11 @@
     }
 
 
-    .poster-section {
-      margin-top: 1.5rem;
-    }
-
-    .poster-viewer {
+    .poster-frame {
       width: 100%;
-      min-height: 620px;
+      height: 900px;
       border: 1px solid var(--border);
       border-radius: 0.6rem;
-      background: #ffffff;
       margin-top: 0.5rem;
     }
 
@@ -366,9 +361,9 @@
           </div>
         </section>
 
-        <section class="poster-section">
+        <section>
           <h3>User submitted poster</h3>
-          <embed class="poster-viewer" src="NameHimPoster.pdf" type="application/pdf" />
+          <iframe class="poster-frame" src="NameHimPoster.pdf" title="User submitted poster PDF"></iframe>
           <a class="poster-download" href="NameHimPoster.pdf" download>Download poster PDF</a>
         </section>
 
