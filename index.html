@@ -1078,6 +1078,7 @@
     let allTotalCount = 0;   // total number of reports (from paginated API)
     let stateCounts = {};
     let countryCounts = {};
+    const MAP_COUNTS_STORAGE_KEY = 'namehim_map_counts_v1';
     window.stateCounts = stateCounts;
     window.countryCounts = countryCounts;
     let fullReportsList = [];
@@ -1208,6 +1209,23 @@
       persistMapCounts();
       updateUSMapWithCounts();
       updateWorldMapWithCounts();
+    }
+
+    function getCountsGrandTotal() {
+      const stateTotal = Object.values(stateCounts || {}).reduce((sum, value) => sum + (Number(value) || 0), 0);
+      const countryTotal = Object.values(countryCounts || {}).reduce((sum, value) => sum + (Number(value) || 0), 0);
+      return Math.max(stateTotal, countryTotal);
+    }
+
+    async function ensureCountsCoverTotalReports() {
+      if (!allTotalCount) return;
+      const aggregateTotal = getCountsGrandTotal();
+      if (aggregateTotal >= allTotalCount) return;
+
+      const loaded = await ensureFullListLoaded();
+      if (loaded) {
+        rebuildCountsFromReports(fullReportsList);
+      }
     }
 
     function validateCategorySelection(rawCategories) {
@@ -2118,6 +2136,7 @@ function addStoryTimestamp() {
     window.allReports = allReports;
     allTotalCount = data.total;
     hasLoadedReports = true;
+    ensureCountsCoverTotalReports();
 
     updateReportCount(allTotalCount);                     // show total count
     renderReportRows(allReports);                         // display the page
@@ -2171,8 +2190,10 @@ async function loadMapStats() {
     countryCounts = data && data.countryCounts && typeof data.countryCounts === 'object' ? data.countryCounts : {};
     window.stateCounts = stateCounts;
     window.countryCounts = countryCounts;
+    persistMapCounts();
     updateUSMapWithCounts();
     updateWorldMapWithCounts();
+    await ensureCountsCoverTotalReports();
   } catch (e) {
     console.warn('Could not load map stats:', e);
     if ((!stateCounts || !Object.keys(stateCounts).length) && (!countryCounts || !Object.keys(countryCounts).length)) {
