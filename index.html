@@ -1078,6 +1078,8 @@
     let allTotalCount = 0;   // total number of reports (from paginated API)
     let stateCounts = {};
     let countryCounts = {};
+    window.stateCounts = stateCounts;
+    window.countryCounts = countryCounts;
     let fullReportsList = [];
     let fullListLoaded = false;
 
@@ -2112,6 +2114,8 @@ async function loadMapStats() {
     const data = await response.json();
     stateCounts = data && data.stateCounts && typeof data.stateCounts === 'object' ? data.stateCounts : {};
     countryCounts = data && data.countryCounts && typeof data.countryCounts === 'object' ? data.countryCounts : {};
+    window.stateCounts = stateCounts;
+    window.countryCounts = countryCounts;
     updateUSMapWithCounts();
     updateWorldMapWithCounts();
   } catch (e) {
