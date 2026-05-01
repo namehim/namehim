@@ -92,6 +92,28 @@
       color: #cbd5e1;
       line-height: 1.5;
     }
+    .resource-search {
+      margin: 0 0 1rem;
+      display: grid;
+      gap: 0.45rem;
+    }
+    .resource-search input {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 0.6rem;
+      padding: 0.7rem 0.85rem;
+      background: var(--panel-2);
+      color: var(--text);
+      font-size: 0.95rem;
+    }
+    .resource-search input::placeholder {
+      color: var(--muted);
+    }
+    .result-count {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.88rem;
+    }
     .grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
@@ -158,7 +180,12 @@
   <main>
     <div class="container resources-wrap">
       <p class="intro">If you are in immediate danger, contact your local emergency number right away. The resources below may help with domestic violence, sexual assault, crisis support, and victim services. (Countries with most site visitors shown first, adding more soon)</p>
-      <div class="grid">
+      <div class="resource-search">
+        <label for="resource-search-input">Search resources by country, hotline, keyword, or phone number</label>
+        <input id="resource-search-input" type="search" placeholder="Try: United States, RAINN, 116 016, emergency…" />
+        <p id="resource-results-count" class="result-count" aria-live="polite"></p>
+      </div>
+      <div id="resource-grid" class="grid">
         <section class="card"><h2>United States</h2><p class="line"><strong>Emergency:</strong> 911</p><p class="line"><strong>National Domestic Violence Hotline:</strong> 800-799-7233 (SAFE) | Text "START" to 88788 | <a href="https://www.thehotline.org" target="_blank" rel="noopener noreferrer">thehotline.org</a></p><p class="line"><strong>RAINN (Sexual Assault):</strong> 800-656-4673 (HOPE) | Text "HOPE" to 64673 | <a href="https://www.rainn.org" target="_blank" rel="noopener noreferrer">rainn.org</a></p><p class="line"><strong>National Center for Victims of Crime (VictimConnect):</strong> 855-484-2846 (VICTIM) | <a href="https://victimconnect.org" target="_blank" rel="noopener noreferrer">victimconnect.org</a></p><p class="line"><strong>Crisis Text Line:</strong> Text HOME to 741741</p></section>
         <section class="card"><h2>Canada</h2><p class="line"><strong>Emergency:</strong> 911</p><p class="line"><strong>Domestic Violence Help Line:</strong> 1-888-709-7090 (Available 24/7)</p><p class="line"><strong>Family Violence Info Line (Alberta):</strong> 310-1818</p><p class="line"><strong>VictimLink BC:</strong> 1-800-563-0808</p><p class="line"><strong>Alberta's One Line for Sexual Violence:</strong> 1-866-403-8000</p><p class="line"><strong>SAC (Sexual Assault Centre):</strong> Search online for your local Sexual Assault Centre.</p><p class="line"><strong>Kids Help Phone:</strong> 1-800-668-6868 | Text CONNECT to 686868</p><p class="line"><strong>Talk Suicide Canada:</strong> 1-833-456-4566 | Text 45645</p></section>
         <section class="card"><h2>Australia</h2><p class="line"><strong>Emergency:</strong> 000</p><p class="line"><strong>1800RESPECT (Domestic, Family & Sexual Violence):</strong> 1800 737 732 | <a href="https://www.1800respect.org.au" target="_blank" rel="noopener noreferrer">1800respect.org.au</a></p><p class="line"><strong>Lifeline (Crisis Support):</strong> 13 11 14</p><p class="line"><strong>Suicide Call Back Service:</strong> 1300 659 467</p><p class="line"><strong>Kids Helpline:</strong> 1800 55 1800</p></section>
@@ -221,6 +248,9 @@
   <script>
     const THEME_STORAGE_KEY = 'namehim_dark_mode';
     const themeToggle = document.getElementById('theme-toggle');
+    const resourceSearchInput = document.getElementById('resource-search-input');
+    const resourceResultsCount = document.getElementById('resource-results-count');
+    const resourceCards = Array.from(document.querySelectorAll('#resource-grid .card'));
 
     function applyTheme(isDarkMode) {
       document.body.classList.toggle('light-mode', !isDarkMode);
@@ -238,6 +268,32 @@
         localStorage.setItem(THEME_STORAGE_KEY, isDarkMode ? 'true' : 'false');
         applyTheme(isDarkMode);
       });
+    }
+
+    function updateResourceResultsCount(visibleResources, totalResources) {
+      if (!resourceResultsCount) return;
+      const noun = visibleResources === 1 ? 'resource' : 'resources';
+      resourceResultsCount.textContent = `Showing ${visibleResources} of ${totalResources} ${noun}.`;
+    }
+
+    function filterResources() {
+      if (!resourceSearchInput) return;
+      const query = resourceSearchInput.value.trim().toLowerCase();
+      let visibleCount = 0;
+
+      resourceCards.forEach((card) => {
+        const cardText = card.textContent.toLowerCase();
+        const isVisible = query === '' || cardText.includes(query);
+        card.style.display = isVisible ? '' : 'none';
+        if (isVisible) visibleCount += 1;
+      });
+
+      updateResourceResultsCount(visibleCount, resourceCards.length);
+    }
+
+    if (resourceSearchInput) {
+      resourceSearchInput.addEventListener('input', filterResources);
+      filterResources();
     }
 
     document.getElementById('year').textContent = new Date().getFullYear();
