@@ -406,9 +406,16 @@
 
     .map-toggle-row {
       display: flex;
+      flex-direction: column;
+      align-items: flex-start;
       gap: 0.5rem;
-      align-items: center;
       margin-bottom: 0.65rem;
+    }
+
+    .map-toggle-buttons {
+      display: flex;
+      gap: 0.5rem;
+      width: 100%;
     }
 
     .map-toggle-row .map-toggle-wrap {
@@ -421,8 +428,8 @@
       color: #facc15;
       text-align: center;
       line-height: 1.3;
-      flex: 1.6;
       margin: 0;
+      width: 100%;
     }
 
     .map-toggle-btn {
@@ -621,13 +628,15 @@
           <span>(full list below).</span>
         </p>
         <div class="map-toggle-row">
-          <div class="map-toggle-wrap">
-            <button id="toggle-map-btn" class="map-toggle-btn" type="button" aria-expanded="false" aria-controls="map">Show US Map</button>
+          <div class="map-toggle-buttons">
+            <div class="map-toggle-wrap">
+              <button id="toggle-map-btn" class="map-toggle-btn" type="button" aria-expanded="false" aria-controls="map">Show US Map</button>
+            </div>
+            <div class="map-toggle-wrap">
+              <button id="toggle-world-map-btn" class="map-toggle-btn" type="button" aria-expanded="false" aria-controls="world-map">Show World Map</button>
+            </div>
           </div>
           <p class="map-count-note">Map totals may currently appear lower than the actual report count. Click any state or country on the map to view all reports for that location, which may show a higher total.</p>
-          <div class="map-toggle-wrap">
-            <button id="toggle-world-map-btn" class="map-toggle-btn" type="button" aria-expanded="false" aria-controls="world-map">Show World Map</button>
-          </div>
         </div>
         <div id="map"></div>
         <div id="world-map"></div>
