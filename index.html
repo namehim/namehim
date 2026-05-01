@@ -1078,7 +1078,6 @@
     let allTotalCount = 0;   // total number of reports (from paginated API)
     let stateCounts = {};
     let countryCounts = {};
-    const MAP_COUNTS_STORAGE_KEY = 'namehim_map_counts_v1';
     window.stateCounts = stateCounts;
     window.countryCounts = countryCounts;
     let fullReportsList = [];
@@ -2172,7 +2171,6 @@ async function loadMapStats() {
     countryCounts = data && data.countryCounts && typeof data.countryCounts === 'object' ? data.countryCounts : {};
     window.stateCounts = stateCounts;
     window.countryCounts = countryCounts;
-    persistMapCounts();
     updateUSMapWithCounts();
     updateWorldMapWithCounts();
   } catch (e) {
