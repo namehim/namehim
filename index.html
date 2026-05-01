@@ -1118,15 +1118,12 @@
       return normalized.slice(0, maxLength);
     }
 
-    function sanitizeLettersOnlyText(value, maxLength) {
+    function sanitizeText(value, maxLength) {
       const normalized = sanitizeReportText(value, maxLength);
       if (!normalized) {
         return '';
       }
-      return normalized
-        .replace(/[^A-Za-z\s]+/g, '')
-        .replace(/\s+/g, ' ')
-        .trim();
+      return normalized.replace(/\s+/g, ' ').trim();
     }
 
     function sanitizeCategoryList(rawCategories) {
@@ -1194,9 +1191,9 @@
 
         return {
           id: Number(report && report.id) || 0,
-          name: sanitizeLettersOnlyText(report && report.name, MAX_BROWSE_FIELD_LENGTH),
-          city: sanitizeLettersOnlyText(report && report.city, MAX_BROWSE_FIELD_LENGTH),
-          state: sanitizeLettersOnlyText(report && report.state, MAX_BROWSE_FIELD_LENGTH),
+          name: sanitizeText(report && report.name, MAX_BROWSE_FIELD_LENGTH),
+          city: sanitizeText(report && report.city, MAX_BROWSE_FIELD_LENGTH),
+          state: sanitizeText(report && report.state, MAX_BROWSE_FIELD_LENGTH),
           country: canonicalCountry,
           categories: sanitizeCategoryList(report && report.categories),
           created_at: sanitizeReportText(report && report.created_at, 64),
@@ -1793,31 +1790,6 @@ function addStoryTimestamp() {
         : `${formattedTimestamp} PDT`;
     }
 
-    function hasInvalidLettersOnlyChars(value) {
-      const normalized = sanitizeReportText(value, MAX_BROWSE_FIELD_LENGTH);
-      if (!normalized) {
-        return false;
-      }
-      return !/^[A-Za-z\s]+$/.test(normalized);
-    }
-
-    function preventInvalidCharsForField(fieldElement) {
-      if (!fieldElement || fieldElement.dataset.lettersOnlyBound === 'true') {
-        return;
-      }
-
-      fieldElement.dataset.lettersOnlyBound = 'true';
-      fieldElement.addEventListener('input', () => {
-        const cleanedValue = fieldElement.value
-          .replace(/[^A-Za-z\s]+/g, '')
-          .replace(/\s+/g, ' ')
-          .trimStart();
-        if (cleanedValue !== fieldElement.value) {
-          fieldElement.value = cleanedValue;
-        }
-      });
-    }
-
     function limitFieldLength(fieldElement, maxLength) {
       if (!fieldElement || !maxLength || fieldElement.dataset.maxLengthBound === 'true') {
         return;
@@ -1830,15 +1802,6 @@ function addStoryTimestamp() {
           fieldElement.value = fieldElement.value.slice(0, maxLength);
         }
       });
-    }
-
-    function bindNoNumberFields() {
-      preventInvalidCharsForField(document.getElementById('name'));
-      preventInvalidCharsForField(document.getElementById('city'));
-      const stateField = document.getElementById('state');
-      if (stateField && stateField.tagName === 'INPUT') {
-        preventInvalidCharsForField(stateField);
-      }
     }
 
     function bindFieldLengthLimits() {
@@ -1864,7 +1827,6 @@ function addStoryTimestamp() {
             ${stateOptions}
           </select>
         `;
-        bindNoNumberFields();
         bindFieldLengthLimits();
         return;
       }
@@ -1874,7 +1836,6 @@ function addStoryTimestamp() {
         <input type="text" id="state" maxlength="20" placeholder="State / Province (optional)" inputmode="text">
       `;
 
-      bindNoNumberFields();
       bindFieldLengthLimits();
     }
 
@@ -2388,9 +2349,9 @@ async function loadMapStats() {
       }
 
       const payload = {
-        name: sanitizeReportText(document.getElementById('name').value, MAX_BROWSE_FIELD_LENGTH),
-        city: sanitizeReportText(document.getElementById('city').value, MAX_BROWSE_FIELD_LENGTH),
-        state: sanitizeReportText(document.getElementById('state').value, MAX_BROWSE_FIELD_LENGTH) || null,
+        name: sanitizeText(document.getElementById('name').value, MAX_BROWSE_FIELD_LENGTH),
+        city: sanitizeText(document.getElementById('city').value, MAX_BROWSE_FIELD_LENGTH),
+        state: sanitizeText(document.getElementById('state').value, MAX_BROWSE_FIELD_LENGTH) || null,
         country: sanitizeReportText(document.getElementById('country').value, MAX_BROWSE_FIELD_LENGTH),
         categories: getSelectedCategories(),
         submitter_uuid: getOrCreateSubmitterId(),
@@ -2400,18 +2361,6 @@ async function loadMapStats() {
       // Validation (keep your existing checks)
       if (!payload.name || !payload.city || !payload.country) {
         submitMessage.textContent = '* Please fill out the Name and Location fields to submit an entry.';
-        submitMessage.className = 'message error';
-        return;
-      }
-
-      const stateInputField = document.getElementById('state');
-      const shouldValidateStateInput = stateInputField && stateInputField.tagName === 'INPUT';
-      if (
-        hasInvalidLettersOnlyChars(payload.name) ||
-        hasInvalidLettersOnlyChars(payload.city) ||
-        (shouldValidateStateInput && hasInvalidLettersOnlyChars(payload.state))
-      ) {
-        submitMessage.textContent = '* Name and Location can only contain English letters (A-Z).';
         submitMessage.className = 'message error';
         return;
       }
@@ -2602,7 +2551,6 @@ async function loadMapStats() {
       });
       countryField.addEventListener('change', renderStateField);
       reportSearch.addEventListener('input', applySearchFilter);
-      bindNoNumberFields();
       bindFieldLengthLimits();
       clearSearch.addEventListener('click', async function clearSearchInput() {
         reportSearch.value = '';
