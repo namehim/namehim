@@ -45,10 +45,26 @@
       --panel-2: #f8fafc;
       --text: #000000;
       --muted: #374151;
-      --border: #000000;
+      --border: #cbd5e1;
       --accent: #2563eb;
       --danger: #b91c1c;
       --success: #166534;
+      --surface-strong: #f1f5f9;
+      --header-bg: rgba(255, 255, 255, 0.95);
+      --footer-bg: rgba(248, 250, 252, 0.95);
+      --table-row-border: #e2e8f0;
+      --table-head-text: #1f2937;
+      --hover-bg: rgba(37, 99, 235, 0.08);
+      --label-text: #111827;
+    }
+    :root {
+      --surface-strong: #0f172a;
+      --header-bg: rgba(17, 24, 39, 0.92);
+      --footer-bg: rgba(17, 24, 39, 0.85);
+      --table-row-border: #1e293b;
+      --table-head-text: #cbd5e1;
+      --hover-bg: rgba(51, 65, 85, 0.3);
+      --label-text: #d1d5db;
     }
 
     * { box-sizing: border-box; }
@@ -75,7 +91,7 @@
 
     header {
       border-bottom: 1px solid var(--border);
-      background: rgba(17, 24, 39, 0.92);
+      background: var(--header-bg);
       position: sticky;
       top: 0;
       z-index: 20;
@@ -112,7 +128,7 @@
     }
 
     .nav-link:hover,
-    .nav-link.active { background: #334155; }
+    .nav-link.active { background: var(--surface-strong); }
 
     main { flex: 1; }
 
@@ -203,7 +219,7 @@
       border: 1px solid var(--border);
       border-radius: 0.7rem;
       overflow-x: auto;
-      background: #0f172a;
+      background: var(--surface-strong);
     }
 
     .table-guidance {
@@ -224,7 +240,7 @@
     }
 
     th, td {
-      border-bottom: 1px solid #1e293b;
+      border-bottom: 1px solid var(--table-row-border);
       padding: 0.8rem;
       text-align: left;
       vertical-align: top;
@@ -233,12 +249,12 @@
 
     th {
       background: var(--panel-2);
-      color: #cbd5e1;
+      color: var(--table-head-text);
       font-weight: 600;
       white-space: nowrap;
     }
 
-    tbody tr:hover { background: rgba(51, 65, 85, 0.3); }
+    tbody tr:hover { background: var(--hover-bg); }
 
     .pills {
       display: flex;
@@ -292,7 +308,7 @@
       position: fixed;
       right: 1rem;
       bottom: 1rem;
-      background: #0f172a;
+      background: var(--surface-strong);
       border: 1px solid var(--border);
       color: var(--text);
       border-radius: 0.55rem;
@@ -349,7 +365,7 @@
       display: block;
       font-size: 0.9rem;
       margin-bottom: 0.35rem;
-      color: #d1d5db;
+      color: var(--label-text);
     }
 
     .grid {
@@ -419,7 +435,7 @@
       margin-bottom: 1rem;
       border: 1px solid var(--border);
       border-radius: 0.7rem;
-      background: #0f172a;
+      background: var(--surface-strong);
     }
 
     #world-map a[href*="simplemaps.com"],
@@ -434,7 +450,7 @@
 
     footer {
       border-top: 1px solid var(--border);
-      background: rgba(17, 24, 39, 0.85);
+      background: var(--footer-bg);
       margin-top: 2rem;
     }
 
