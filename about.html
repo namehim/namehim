@@ -181,6 +181,39 @@
       color: #bfdbfe;
     }
 
+
+    .poster-image {
+      width: 100%;
+      height: auto;
+      border: 1px solid var(--border);
+      border-radius: 0.6rem;
+      margin-top: 0.5rem;
+      display: block;
+    }
+
+    .poster-fallback {
+      margin-top: 0.6rem;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    .poster-download {
+      margin-top: 0.85rem;
+      display: inline-block;
+      padding: 0.6rem 0.95rem;
+      border: 1px solid var(--border);
+      border-radius: 0.5rem;
+      background: var(--panel-2);
+      color: var(--text);
+      text-decoration: none;
+      font-weight: 600;
+    }
+
+    .poster-download:hover {
+      background: #334155;
+      color: #ffffff;
+    }
+
     .support-buttons {
       margin-top: 0.9rem;
       display: flex;
@@ -334,6 +367,14 @@
             </div>
           </div>
         </section>
+
+        <section>
+          <h3>User submitted poster</h3>
+          <img id="poster-image" class="poster-image" alt="User submitted NameHim poster" />
+          <p id="poster-fallback" class="poster-fallback" hidden>Could not load poster preview image. Use the download button below to open the PDF.</p>
+          <a class="poster-download" href="NameHimPoster.pdf" download>Download poster PDF</a>
+        </section>
+
         <section>
           <p>Contact: namehim.app@proton.me</p>
         </section>
@@ -360,6 +401,7 @@
     </div>
   </footer>
 
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.5.136/pdf.min.js" integrity="sha512-fD6yM9rYfKfTYkzqN2B2Sleqrs9jwELyhl725LLJoPLD114F8CbnMD4PlzyBbs6k8ZZrVSu2Ce279b9EcRWWYw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <script>
     // Dark mode (unchanged)
     const THEME_STORAGE_KEY = 'namehim_dark_mode';
@@ -431,8 +473,38 @@
       }
     }
 
+
+    async function loadPosterPreview() {
+      const posterImage = document.getElementById('poster-image');
+      const posterFallback = document.getElementById('poster-fallback');
+      if (!posterImage || !window.pdfjsLib) return;
+
+      try {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.5.136/pdf.worker.min.js';
+        const loadingTask = pdfjsLib.getDocument('NameHimPoster.pdf');
+        const pdf = await loadingTask.promise;
+        const page = await pdf.getPage(1);
+        const viewport = page.getViewport({ scale: 1.6 });
+
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        canvas.width = Math.ceil(viewport.width);
+        canvas.height = Math.ceil(viewport.height);
+
+        await page.render({ canvasContext: context, viewport }).promise;
+        posterImage.src = canvas.toDataURL('image/png');
+        posterImage.width = canvas.width;
+        posterImage.height = canvas.height;
+        if (posterFallback) posterFallback.hidden = true;
+      } catch (error) {
+        console.error('Failed to render poster preview from PDF:', error);
+        if (posterFallback) posterFallback.hidden = false;
+      }
+    }
+
     // Start the count load
     loadReportCount();
+    loadPosterPreview();
   </script>
 </body>
 </html>
