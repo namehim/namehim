@@ -219,8 +219,16 @@ async function handleSubmitReport(request, env) {
     body: JSON.stringify(reportData)
   });
   if (!insertRes.ok) {
-    console.error(await insertRes.text());
-    return errorResponse("Submission failed", 500);
+    const errorBody = await insertRes.text();
+    console.error("Report insert failed:", insertRes.status, errorBody);
+    let readableError = "Submission failed";
+    try {
+      const parsed = JSON.parse(errorBody);
+      readableError = parsed.message || parsed.error_description || parsed.hint || parsed.details || parsed.error || readableError;
+    } catch (parseError) {
+      if (errorBody) readableError = errorBody;
+    }
+    return errorResponse(readableError, insertRes.status >= 400 && insertRes.status < 600 ? insertRes.status : 500);
   }
 
   if (env.CACHE_KV) {
@@ -267,8 +275,16 @@ async function handleSubmitStory(request, env) {
     })
   });
   if (!insertRes.ok) {
-    console.error(await insertRes.text());
-    return errorResponse("Submission failed", 500);
+    const errorBody = await insertRes.text();
+    console.error("Story insert failed:", insertRes.status, errorBody);
+    let readableError = "Submission failed";
+    try {
+      const parsed = JSON.parse(errorBody);
+      readableError = parsed.message || parsed.error_description || parsed.hint || parsed.details || parsed.error || readableError;
+    } catch (parseError) {
+      if (errorBody) readableError = errorBody;
+    }
+    return errorResponse(readableError, insertRes.status >= 400 && insertRes.status < 600 ? insertRes.status : 500);
   }
   return new Response(JSON.stringify({ success: true }), { status: 200, headers: corsHeaders() });
 }
