@@ -181,6 +181,37 @@
       color: #bfdbfe;
     }
 
+
+    .poster-section {
+      margin-top: 1.5rem;
+    }
+
+    .poster-viewer {
+      width: 100%;
+      min-height: 620px;
+      border: 1px solid var(--border);
+      border-radius: 0.6rem;
+      background: #ffffff;
+      margin-top: 0.5rem;
+    }
+
+    .poster-download {
+      margin-top: 0.85rem;
+      display: inline-block;
+      padding: 0.6rem 0.95rem;
+      border: 1px solid var(--border);
+      border-radius: 0.5rem;
+      background: var(--panel-2);
+      color: var(--text);
+      text-decoration: none;
+      font-weight: 600;
+    }
+
+    .poster-download:hover {
+      background: #334155;
+      color: #ffffff;
+    }
+
     .support-buttons {
       margin-top: 0.9rem;
       display: flex;
@@ -334,6 +365,13 @@
             </div>
           </div>
         </section>
+
+        <section class="poster-section">
+          <h3>User submitted poster</h3>
+          <embed class="poster-viewer" src="NameHimPoster.pdf" type="application/pdf" />
+          <a class="poster-download" href="NameHimPoster.pdf" download>Download poster PDF</a>
+        </section>
+
         <section>
           <p>Contact: namehim.app@proton.me</p>
         </section>
