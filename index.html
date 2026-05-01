@@ -2466,6 +2466,7 @@ async function loadMapStats() {
         window.location.hash = '#/browse';
       } catch (error) {
         console.error('Submission error:', error);
+        resetTurnstileWidget();
         submitMessage.textContent = error.message;
         submitMessage.className = 'message error';
       } finally {
