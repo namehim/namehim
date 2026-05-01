@@ -1125,7 +1125,7 @@
         return '';
       }
       return normalized
-        .replace(/[^A-Za-z\s]+/g, '')
+        .replace(/[^\p{L}\p{M}\s'\-.]+/gu, '')
         .replace(/\s+/g, ' ')
         .trim();
     }
@@ -1799,7 +1799,7 @@ function addStoryTimestamp() {
       if (!normalized) {
         return false;
       }
-      return !/^[A-Za-z\s]+$/.test(normalized);
+      return !/^[\p{L}\p{M}\s'\-.]+$/u.test(normalized);
     }
 
     function preventInvalidCharsForField(fieldElement) {
@@ -1810,7 +1810,7 @@ function addStoryTimestamp() {
       fieldElement.dataset.lettersOnlyBound = 'true';
       fieldElement.addEventListener('input', () => {
         const cleanedValue = fieldElement.value
-          .replace(/[^A-Za-z\s]+/g, '')
+          .replace(/[^\p{L}\p{M}\s'\-.]+/gu, '')
           .replace(/\s+/g, ' ')
           .trimStart();
         if (cleanedValue !== fieldElement.value) {
@@ -2412,7 +2412,7 @@ async function loadMapStats() {
         hasInvalidLettersOnlyChars(payload.city) ||
         (shouldValidateStateInput && hasInvalidLettersOnlyChars(payload.state))
       ) {
-        submitMessage.textContent = '* Name and Location can only contain English letters (A-Z).';
+        submitMessage.textContent = '* Name and Location can only contain letters in any language, spaces, apostrophes, periods, and hyphens.';
         submitMessage.className = 'message error';
         return;
       }
