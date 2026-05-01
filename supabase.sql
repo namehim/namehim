@@ -26,20 +26,12 @@ alter table public.reports
 alter table public.reports
   add constraint reports_name_check
     check (char_length(btrim(name)) between 1 and 20 and octet_length(name) <= 80),
-  add constraint reports_name_letters_check
-    check (btrim(name) ~ '^[A-Za-z ]+$'),
   add constraint reports_city_check
     check (char_length(btrim(city)) between 1 and 20 and octet_length(city) <= 80),
-  add constraint reports_city_letters_check
-    check (btrim(city) ~ '^[A-Za-z ]+$'),
   add constraint reports_state_check
     check (state is null or (char_length(btrim(state)) between 1 and 20 and octet_length(state) <= 80)),
-  add constraint reports_state_letters_check
-    check (state is null or btrim(state) ~ '^[A-Za-z ]+$'),
   add constraint reports_country_check
     check (char_length(btrim(country)) between 1 and 20 and octet_length(country) <= 80),
-  add constraint reports_country_letters_check
-    check (btrim(country) ~ '^[A-Za-z ]+$'),
   add constraint reports_submitter_uuid_check
     check (char_length(btrim(submitter_uuid)) between 16 and 100);
 
@@ -86,16 +78,12 @@ for insert
 to anon, authenticated
 with check (
   char_length(btrim(name)) between 1 and 20
-  and btrim(name) ~ '^[A-Za-z ]+$'
   and octet_length(name) <= 80
   and char_length(btrim(city)) between 1 and 20
-  and btrim(city) ~ '^[A-Za-z ]+$'
   and octet_length(city) <= 80
   and (state is null or char_length(btrim(state)) between 1 and 20)
-  and (state is null or btrim(state) ~ '^[A-Za-z ]+$')
   and (state is null or octet_length(state) <= 80)
   and char_length(btrim(country)) between 1 and 20
-  and btrim(country) ~ '^[A-Za-z ]+$'
   and octet_length(country) <= 80
   and char_length(btrim(submitter_uuid)) between 16 and 100
   and array_length(categories, 1) between 1 and 8
