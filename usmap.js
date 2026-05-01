@@ -92,6 +92,11 @@ var simplemaps_usmap_mapinfo={map_name:'us',initial_view:{x:-20,y:-10,x2:980,y2:
   }
 
   function getReportCount(stateName) {
+    var counts = window.stateCounts && typeof window.stateCounts === "object" ? window.stateCounts : null;
+    if (counts && Object.prototype.hasOwnProperty.call(counts, stateName)) {
+      return Number(counts[stateName]) || 0;
+    }
+
     var reports = Array.isArray(window.allReports) ? window.allReports : [];
     var count = 0;
     for (var i = 0; i < reports.length; i += 1) {
