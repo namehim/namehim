@@ -886,6 +886,11 @@
             <div class="checkboxes" id="category-checkboxes"></div>
           </fieldset>
 
+          <div style="display: none;">
+          <label for="website">Leave this field empty (spam prevention)</label>
+          <input type="text" id="website" name="website" value="" />
+        </div>
+
           <div class="row">
             <div
               class="cf-turnstile"
@@ -2471,6 +2476,17 @@ async function loadMapStats() {
 
     async function handleSubmit(event) {
       event.preventDefault();
+      // hiddenkey check
+    const hiddenkey = document.getElementById('website');
+    if (hiddenkey && hiddenkey.value.trim() !== '') {
+    console.log('hiddenkey triggered – rejected');
+    // message
+    submitMessage.textContent = 'Report submitted successfully.';
+    submitMessage.className = 'message success';
+    reportForm.reset();
+    resetTurnstileWidget();
+    return;
+    }
       submitMessage.textContent = '';
       submitMessage.className = 'message';
       turnstileWarning.classList.add('hidden');
