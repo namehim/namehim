@@ -1056,13 +1056,19 @@
 
     const US_STATES = [
       'Alabama', 'Alaska', 'Arizona', 'Arkansas', 'California', 'Colorado', 'Connecticut', 'Delaware',
-      'Florida', 'Georgia', 'Hawaii', 'Idaho', 'Illinois', 'Indiana', 'Iowa', 'Kansas', 'Kentucky',
+      'District of Columbia', 'Florida', 'Georgia', 'Hawaii', 'Idaho', 'Illinois', 'Indiana', 'Iowa', 'Kansas', 'Kentucky',
       'Louisiana', 'Maine', 'Maryland', 'Massachusetts', 'Michigan', 'Minnesota', 'Mississippi',
       'Missouri', 'Montana', 'Nebraska', 'Nevada', 'New Hampshire', 'New Jersey', 'New Mexico',
       'New York', 'North Carolina', 'North Dakota', 'Ohio', 'Oklahoma', 'Oregon', 'Pennsylvania',
       'Rhode Island', 'South Carolina', 'South Dakota', 'Tennessee', 'Texas', 'Utah', 'Vermont',
       'Virginia', 'Washington', 'West Virginia', 'Wisconsin', 'Wyoming'
     ];
+
+    const STATE_NAME_ALIASES = {
+      dc: 'district of columbia',
+      'd.c.': 'district of columbia',
+      'district columbia': 'district of columbia'
+    };
 
     window.US_STATES = US_STATES;
     const ALLOWED_COUNTRY_BY_NORMALIZED = new Map();
@@ -1334,6 +1340,12 @@
       return normalizeCountryForFiltering(value) === 'united states';
     }
 
+
+    function normalizeStateForFiltering(value) {
+      const normalized = String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+      return STATE_NAME_ALIASES[normalized] || normalized;
+    }
+
     function rebuildAllowedCountries() {
       ALLOWED_COUNTRY_BY_NORMALIZED.clear();
       Array.from((countryField && countryField.options) || []).forEach((option) => {
@@ -1476,7 +1488,8 @@ async function filterReportsByState(stateFullName) {
   const loaded = await ensureFullListLoaded();
   if (!loaded) return;
 
-  const filtered = fullReportsList.filter((r) => r.state === stateFullName);
+  const normalizedState = normalizeStateForFiltering(stateFullName);
+  const filtered = fullReportsList.filter((r) => normalizeStateForFiltering(r.state) === normalizedState);
   allReports = filtered;
   window.allReports = allReports;
   allTotalCount = filtered.length;
@@ -2076,7 +2089,7 @@ function addStoryTimestamp() {
 
       const query = (reportSearch.value || '').trim().toLowerCase();
       const selectedCountry = String((browseCountrySelect && browseCountrySelect.value) || '').trim().toLowerCase();
-      const selectedState = String((browseStateSelect && browseStateSelect.value) || '').trim().toLowerCase();
+      const selectedState = normalizeStateForFiltering((browseStateSelect && browseStateSelect.value) || '');
 
       if (!query && !selectedCountry && !selectedState) {
         renderPagedReports(allReports, preservePage ? currentPage : 1);
@@ -2095,7 +2108,7 @@ function addStoryTimestamp() {
           .map((item) => String(item || '').toLowerCase())
           .join(' ');
         const reportCountry = normalizeCountryForFiltering(report.country);
-        const reportState = String(report.state || '').trim().toLowerCase();
+        const reportState = normalizeStateForFiltering(report.state);
 
         const matchesQuery = !query || blob.includes(query);
         const matchesCountry = !selectedCountry || reportCountry === normalizeCountryForFiltering(selectedCountry);
@@ -2952,7 +2965,13 @@ function updateUSMapWithCounts() {
   const stateSpecific = (mapData && mapData.state_specific) || {};
   Object.keys(stateSpecific).forEach((stateId) => {
     const stateName = stateSpecific[stateId] && stateSpecific[stateId].name;
-    const count = stateCounts[stateName] || 0;
+    const canonicalStateName = normalizeStateForFiltering(stateName);
+    let count = Number(stateCounts[stateName]) || Number(stateCounts[canonicalStateName]) || 0;
+
+    if (!count && canonicalStateName === 'district of columbia') {
+      count = Number(stateCounts.DC) || Number(stateCounts.dc) || Number(stateCounts['D.C.']) || 0;
+    }
+
     stateSpecific[stateId].description = 'Reports: ' + count;
   });
   if (window.simplemaps_usmap && typeof window.simplemaps_usmap.refresh === 'function') {
