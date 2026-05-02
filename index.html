@@ -281,6 +281,40 @@
     .rape { background: #dc2626; color: #fff; }
     .pedo { background: #14b8a6; color: #06202a; }
 
+    /* Story category pill styles */
+.story-category-general { background: #6b7280; color: #fff; }
+.story-category-survivor { background: #dc2626; color: #fff; }
+.story-category-empowerment { background: #fbbf24; color: #111827; }
+.story-category-advice { background: #8b5cf6; color: #fff; }
+.story-category-calltoaction { background: #ec4899; color: #fff; }
+.story-category-question { background: #06b6d4; color: #fff; }
+
+
+.story-category-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 1rem 0 1.5rem;
+}
+.category-filter-btn {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 2rem;
+  padding: 0.3rem 0.8rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.category-filter-btn.active {
+  background: var(--accent);
+  color: #0f172a;
+  border-color: var(--accent);
+}
+.category-filter-btn:hover {
+  background: var(--accent);
+  color: #0f172a;
+}
+
     .message {
       margin-top: 0.9rem;
       font-size: 0.92rem;
@@ -921,6 +955,17 @@
       <textarea id="story-content" rows="6" maxlength="1000" required placeholder="Share your experience (no names, no identifying details)..."></textarea>
     </div>
     <div class="row">
+  <label for="story-category">Category (optional)</label>
+  <select id="story-category">
+    <option value="">-- Select a category (optional) --</option>
+    <option value="Survivor Story">Survivor Story (may contain sensitive content)</option>
+    <option value="Empowerment &amp; Hope">Empowerment &amp; Hope</option>
+    <option value="Advice &amp; Support">Advice &amp; Support</option>
+    <option value="Call to Action">Call to Action</option>
+    <option value="Question / Discussion">Question / Discussion</option>
+  </select>
+</div>
+    <div class="row">
       <div class="cf-turnstile" id="story-turnstile" data-theme="dark"></div>
       <p id="story-turnstile-warning" class="warning hidden">Please complete the CAPTCHA.</p>
     </div>
@@ -936,6 +981,15 @@
   <div id="single-story-controls" class="single-report-controls hidden" style="margin-top: 2rem;">
     <button id="back-to-all-stories" type="button">← Back to all approved posts</button>
   </div>
+  <div class="story-category-filters">
+  <button class="category-filter-btn active" data-category="all">All</button>
+  <button class="category-filter-btn" data-category="Survivor Story">Survivor Story</button>
+  <button class="category-filter-btn" data-category="Empowerment & Hope">Empowerment & Hope</button>
+  <button class="category-filter-btn" data-category="Advice & Support">Advice & Support</button>
+  <button class="category-filter-btn" data-category="Call to Action">Call to Action</button>
+  <button class="category-filter-btn" data-category="Question / Discussion">Question / Discussion</button>
+  <button class="category-filter-btn" data-category="General">General</button>
+</div>
   <h3 id="approved-stories-heading" style="margin-top: 2rem;">Approved stories</h3>
   <div id="stories-container" class="stories-grid">
     <p>Loading stories...</p>
@@ -2311,6 +2365,16 @@ async function loadMapStats() {
     return;
   }
 
+  const categoryValue = story.category || 'General';
+const categoryHtml = `<span class="story-category" style="display: inline-block; background: var(--accent); color: #0f172a; font-size: 0.7rem; padding: 0.2rem 0.5rem; border-radius: 0.5rem; margin-right: 0.5rem;">${escapeHTML(categoryValue)}</span>`;
+
+// If there is a title, put category before it; if no title, just show category as a heading alternative
+if (story.title) {
+  titleHtml = `<h4>${categoryHtml}${escapeHTML(story.title)}</h4>`;
+} else {
+  titleHtml = `<h4>${categoryHtml}</h4>`;
+}
+
   approvedStories = data;
   if (!storyId) {
     applyStorySearchFilter();
@@ -2420,6 +2484,17 @@ async function loadMapStats() {
       token = window.turnstile.getResponse(turnstileWidget);
     }
   }
+
+  let category = document.getElementById('story-category').value;
+if (!category) category = 'General';
+
+const payload = {
+  title,
+  content,
+  category,
+  submitter_uuid: localStorage.getItem('submitter_id'),
+  turnstileToken: token
+};
 
   if (!token) {
     storyTurnstileWarning.classList.remove('hidden');
@@ -2715,6 +2790,54 @@ async function loadMapStats() {
       initMapToggle();
 
       window.addEventListener('hashchange', renderRoute);
+
+      // --- Category filter for community stories ---
+let currentStoryCategory = 'all';
+
+function applyStoryFilters() {
+  if (activeSingleStoryId) return;
+  const searchQuery = (storySearch?.value || '').trim().toLowerCase();
+  let filtered = approvedStories.filter(story => {
+    const category = story.category || 'General';
+    if (currentStoryCategory !== 'all' && category !== currentStoryCategory) return false;
+    if (searchQuery) {
+      const blob = [story.title, story.content].join(' ').toLowerCase();
+      if (!blob.includes(searchQuery)) return false;
+    }
+    return true;
+  });
+  if (!filtered.length) {
+    storiesContainer.innerHTML = searchQuery
+      ? '<p>No approved stories match your search and category.</p>'
+      : '<p>No approved stories yet. Check back soon.</p>';
+    return;
+  }
+  let html = '';
+  for (const story of filtered) {
+    html += getStoryCardMarkup(story);
+  }
+  storiesContainer.innerHTML = html;
+}
+
+function setupCategoryFilters() {
+  const filterContainer = document.querySelector('.story-category-filters');
+  if (!filterContainer) return;
+  filterContainer.addEventListener('click', (e) => {
+    const btn = e.target.closest('.category-filter-btn');
+    if (!btn) return;
+    const category = btn.getAttribute('data-category');
+    if (!category) return;
+    // update active class
+    filterContainer.querySelectorAll('.category-filter-btn').forEach(btn => btn.classList.remove('active'));
+    btn.classList.add('active');
+    currentStoryCategory = category === 'all' ? 'all' : category;
+    applyStoryFilters();
+  });
+}
+
+// Call this inside your init() function, after loadApprovedStories is defined
+// e.g., add: setupCategoryFilters();
+
       window.addEventListener('load', function onWindowLoad() {
         if (mapContainer && mapContainer.style.display !== 'none') {
           refreshSimpleMap();
