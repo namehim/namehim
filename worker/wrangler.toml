@@ -5,3 +5,9 @@ compatibility_date = "2026-04-29"
 kv_namespaces = [
   { binding = "CACHE_KV", id = "2f0c8d45a56d4236a1a10080dcb56d44" }
 ]
+
+[[unsafe.bindings]]
+name = "RATELIMITER"
+type = "ratelimit"
+namespace_id = "1001"
+simple = { limit = 3, period = 60 }
