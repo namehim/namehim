@@ -258,6 +258,24 @@ async function handleSubmitReport(request, env) {
 __name(handleSubmitReport, "handleSubmitReport");
 
 async function handleSubmitStory(request, env) {
+  // ========== RATE LIMITING START ==========
+  const ip = request.headers.get('CF-Connecting-IP');
+  const rateLimitOptions = {
+    key: `${ip}:story`,
+    limitKey: "story",
+    windows: [{ limit: 3, window: 3600 }] // 3 per hour
+  };
+  try {
+    const { success } = await env.RATELIMITER.limit(rateLimitOptions);
+    if (!success) {
+      return errorResponse("Rate limit exceeded. Please wait before trying again.", 429);
+    }
+  } catch (err) {
+    console.error("Rate limiter error:", err);
+    // If rate limiter fails, allow the request (fail open)
+  }
+  // ========== RATE LIMITING END ==========
+
   const supabaseUrl = env.SUPABASE_URL;
   const supabaseKey = env.SUPABASE_SERVICE_ROLE_KEY;
   let payload;
