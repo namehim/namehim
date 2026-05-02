@@ -191,11 +191,6 @@
       display: block;
     }
 
-    .poster-fallback {
-      margin-top: 0.6rem;
-      color: var(--muted);
-      font-size: 0.92rem;
-    }
 
     .poster-download {
       margin-top: 0.85rem;
@@ -370,8 +365,7 @@
 
         <section>
           <h3>User submitted poster</h3>
-          <img id="poster-image" class="poster-image" alt="User submitted NameHim poster" />
-          <p id="poster-fallback" class="poster-fallback" hidden>Could not load poster preview image. Use the download button below to open the PDF.</p>
+          <img class="poster-image" src="NameHimPoster-1.png" alt="User submitted NameHim poster" />
           <a class="poster-download" href="NameHimPoster.pdf" download>Download poster PDF</a>
         </section>
 
@@ -473,34 +467,6 @@
       }
     }
 
-
-    async function loadPosterPreview() {
-      const posterImage = document.getElementById('poster-image');
-      const posterFallback = document.getElementById('poster-fallback');
-      if (!posterImage || !window.pdfjsLib) return;
-
-      try {
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.5.136/pdf.worker.min.js';
-        const loadingTask = pdfjsLib.getDocument('NameHimPoster.pdf');
-        const pdf = await loadingTask.promise;
-        const page = await pdf.getPage(1);
-        const viewport = page.getViewport({ scale: 1.6 });
-
-        const canvas = document.createElement('canvas');
-        const context = canvas.getContext('2d');
-        canvas.width = Math.ceil(viewport.width);
-        canvas.height = Math.ceil(viewport.height);
-
-        await page.render({ canvasContext: context, viewport }).promise;
-        posterImage.src = canvas.toDataURL('image/png');
-        posterImage.width = canvas.width;
-        posterImage.height = canvas.height;
-        if (posterFallback) posterFallback.hidden = true;
-      } catch (error) {
-        console.error('Failed to render poster preview from PDF:', error);
-        if (posterFallback) posterFallback.hidden = false;
-      }
-    }
 
     // Start the count load
     loadReportCount();
