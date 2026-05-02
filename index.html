@@ -2162,6 +2162,7 @@ function addStoryTimestamp() {
 
     browseMessage.textContent = `Loaded ${allReports.length} report(s) (page ${data.page} of ${Math.ceil(allTotalCount / limit)}).`;
     browseMessage.className = 'message';
+    updateBrowseViewFromRoute({ preserveBrowsePage: true });
 
   } catch (error) {
     console.error('Pagination failed, falling back to full fetch:', error);
@@ -2189,6 +2190,7 @@ async function loadReportsFull() {
     renderPagedReports(allReports, 1);
     browseMessage.textContent = `Loaded ${allReports.length} report(s).`;
     browseMessage.className = 'message';
+    updateBrowseViewFromRoute({ preserveBrowsePage: true });
   } catch (error) {
     console.error('Failed to load reports:', error);
     browseMessage.textContent = 'Unable to load reports right now. Please try again in a moment.';
