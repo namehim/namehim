@@ -2299,7 +2299,15 @@ async function loadMapStats() {
 
     function getStoryCardMarkup(story) {
       const submittedAt = formatCommunityPostTimestamp(story.created_at);
-      const titleHtml = story.title ? `<h4>${escapeHTML(story.title)}</h4>` : '';
+      const categoryValue = story.category || 'General';
+      let categoryClass = 'story-category-general';
+      if (categoryValue === 'Survivor Story') categoryClass = 'story-category-survivor';
+      else if (categoryValue === 'Empowerment & Hope') categoryClass = 'story-category-empowerment';
+      else if (categoryValue === 'Advice & Support') categoryClass = 'story-category-advice';
+      else if (categoryValue === 'Call to Action') categoryClass = 'story-category-calltoaction';
+      else if (categoryValue === 'Question / Discussion') categoryClass = 'story-category-question';
+      const categoryHtml = `<span class="story-category ${categoryClass}">${escapeHTML(categoryValue)}</span>`;
+      const titleHtml = story.title ? `<h4>${categoryHtml} ${escapeHTML(story.title)}</h4>` : `<h4>${categoryHtml}</h4>`;
       return `
       <div class="story-card">
         ${titleHtml}
@@ -2312,21 +2320,28 @@ async function loadMapStats() {
     `;
     }
 
-    function applyStorySearchFilter() {
+    let currentStoryCategory = 'all';
+
+    function applyStoryFilters() {
       if (activeSingleStoryId) {
         return;
       }
-      const query = String((storySearch && storySearch.value) || '').trim().toLowerCase();
-      const filteredStories = !query
-        ? approvedStories
-        : approvedStories.filter((story) => {
+      const searchQuery = String((storySearch && storySearch.value) || '').trim().toLowerCase();
+      const filteredStories = approvedStories.filter((story) => {
+          const category = story.category || 'General';
+          if (currentStoryCategory !== 'all' && category !== currentStoryCategory) {
+            return false;
+          }
+          if (!searchQuery) {
+            return true;
+          }
           const blob = [story.title, story.content].join(' ').toLowerCase();
-          return blob.includes(query);
+          return blob.includes(searchQuery);
         });
 
       if (!filteredStories.length) {
-        storiesContainer.innerHTML = query
-          ? '<p>No approved stories match that keyword.</p>'
+        storiesContainer.innerHTML = searchQuery
+          ? '<p>No approved stories match your search and category.</p>'
           : '<p>No approved stories yet. Check back soon.</p>';
         return;
       }
@@ -2338,55 +2353,60 @@ async function loadMapStats() {
       storiesContainer.innerHTML = html;
     }
 
+    function setupCategoryFilters() {
+      const filterContainer = document.querySelector('.story-category-filters');
+      if (!filterContainer) return;
+      filterContainer.addEventListener('click', (event) => {
+        const btn = event.target.closest('.category-filter-btn');
+        if (!btn) return;
+        const category = btn.getAttribute('data-category');
+        if (!category) return;
+        filterContainer.querySelectorAll('.category-filter-btn').forEach((button) => button.classList.remove('active'));
+        btn.classList.add('active');
+        currentStoryCategory = category === 'all' ? 'all' : category;
+        applyStoryFilters();
+      });
+    }
+
     async function loadApprovedStories(options = {}) {
-  const storyId = options.storyId || null;
-  storiesContainer.innerHTML = '<p>Loading stories...</p>';
-  let query = supabaseClient
-    .from('stories')
-    .select('id, title, content, created_at')
-    .eq('is_approved', true);
-  if (storyId) {
-    query = query.eq('id', storyId).limit(1);
-  } else {
-    query = query.order('created_at', { ascending: false });
-  }
-  const { data, error } = await query;
+      const storyId = options.storyId || null;
+      storiesContainer.innerHTML = '<p>Loading stories...</p>';
+      let query = supabaseClient
+        .from('stories')
+        .select('id, title, content, created_at, category')
+        .eq('is_approved', true);
+      if (storyId) {
+        query = query.eq('id', storyId).limit(1);
+      } else {
+        query = query.order('created_at', { ascending: false });
+      }
+      const { data, error } = await query;
 
-  if (error) {
-    storiesContainer.innerHTML = '<p>Error loading stories.</p>';
-    return;
-  }
+      if (error) {
+        storiesContainer.innerHTML = '<p>Error loading stories.</p>';
+        return;
+      }
 
-  if (!data.length) {
-    approvedStories = [];
-    storiesContainer.innerHTML = storyId
-      ? '<p>Post not found. <a href="#/community">Back to all approved posts</a>.</p>'
-      : '<p>No approved stories yet. Check back soon.</p>';
-    return;
-  }
+      if (!data.length) {
+        approvedStories = [];
+        storiesContainer.innerHTML = storyId
+          ? '<p>Post not found. <a href="#/community">Back to all approved posts</a>.</p>'
+          : '<p>No approved stories yet. Check back soon.</p>';
+        return;
+      }
 
-  const categoryValue = story.category || 'General';
-const categoryHtml = `<span class="story-category" style="display: inline-block; background: var(--accent); color: #0f172a; font-size: 0.7rem; padding: 0.2rem 0.5rem; border-radius: 0.5rem; margin-right: 0.5rem;">${escapeHTML(categoryValue)}</span>`;
+      approvedStories = data;
+      if (!storyId) {
+        applyStoryFilters();
+        return;
+      }
 
-// If there is a title, put category before it; if no title, just show category as a heading alternative
-if (story.title) {
-  titleHtml = `<h4>${categoryHtml}${escapeHTML(story.title)}</h4>`;
-} else {
-  titleHtml = `<h4>${categoryHtml}</h4>`;
-}
-
-  approvedStories = data;
-  if (!storyId) {
-    applyStorySearchFilter();
-    return;
-  }
-
-  let html = '';
-  for (const story of data) {
-    html += getStoryCardMarkup(story);
-  }
-  storiesContainer.innerHTML = html;
-}
+      let html = '';
+      for (const story of data) {
+        html += getStoryCardMarkup(story);
+      }
+      storiesContainer.innerHTML = html;
+    }
 
     function updateCommunityViewFromRoute() {
       if (getCurrentRoute() !== '#/community') {
@@ -2454,102 +2474,88 @@ if (story.title) {
 }
 
     async function submitStory(event) {
-  event.preventDefault();
-  storyMessage.textContent = '';
-  storyTurnstileWarning.classList.add('hidden');
+      event.preventDefault();
+      storyMessage.textContent = '';
+      storyTurnstileWarning.classList.add('hidden');
 
-  if (!canSubmitStory()) {
-    storyRateWarning.classList.remove('hidden');
-    return;
-  }
+      if (!canSubmitStory()) {
+        storyRateWarning.classList.remove('hidden');
+        return;
+      }
 
-  // Get the Turnstile widget element
-  const turnstileWidget = storyForm.querySelector('.cf-turnstile');
-  if (!turnstileWidget) {
-    storyMessage.textContent = 'Captcha widget missing. Please refresh the page.';
-    storyMessage.className = 'message error';
-    return;
-  }
+      const title = storyTitle.value.trim() || null;
+      const content = storyContent.value.trim();
+      if (content.length > MAX_COMMUNITY_POST_LENGTH) {
+        storyMessage.textContent = `Your story must be ${MAX_COMMUNITY_POST_LENGTH} characters or fewer.`;
+        storyMessage.className = 'message error';
+        return;
+      }
+      if (!content) {
+        storyMessage.textContent = 'Please write your story.';
+        storyMessage.className = 'message error';
+        return;
+      }
 
-  // Try to get the token directly from Turnstile
-  let token = null;
-  if (window.turnstile) {
-    // First attempt: get existing response
-    token = window.turnstile.getResponse(turnstileWidget);
-    if (!token) {
-      // No token – reset widget to force a new challenge
-      window.turnstile.reset(turnstileWidget);
-      // Wait a moment for the challenge to load
-      await new Promise(resolve => setTimeout(resolve, 500));
-      token = window.turnstile.getResponse(turnstileWidget);
+      let category = document.getElementById('story-category').value;
+      if (!category) category = 'General';
+
+      const turnstileWidget = storyForm.querySelector('.cf-turnstile');
+      if (!turnstileWidget) {
+        storyMessage.textContent = 'Captcha widget missing. Please refresh the page.';
+        storyMessage.className = 'message error';
+        return;
+      }
+
+      let token = null;
+      if (window.turnstile) {
+        token = window.turnstile.getResponse(turnstileWidget);
+        if (!token) {
+          window.turnstile.reset(turnstileWidget);
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          token = window.turnstile.getResponse(turnstileWidget);
+        }
+      }
+
+      if (!token) {
+        storyTurnstileWarning.classList.remove('hidden');
+        return;
+      }
+
+      storySubmitBtn.disabled = true;
+
+      try {
+        const response = await fetch('https://api.namehim.app/submit-story', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title,
+            content,
+            category,
+            submitter_uuid: localStorage.getItem('submitter_id'),
+            turnstileToken: token
+          })
+        });
+        const result = await response.json();
+        if (!response.ok) {
+          throw new Error(result.error || 'Submission failed');
+        }
+
+        addStoryTimestamp();
+        storyMessage.textContent = 'Thank you. Your story has been submitted for review.';
+        storyMessage.className = 'message success';
+        storyForm.reset();
+        if (window.turnstile && turnstileWidget) {
+          window.turnstile.reset(turnstileWidget);
+        }
+        if (window.location.hash === '#/community') loadApprovedStories();
+      } catch (error) {
+        console.error('Story submission error:', error);
+        storyMessage.textContent = error.message;
+        storyMessage.className = 'message error';
+      } finally {
+        storySubmitBtn.disabled = false;
+      }
     }
-  }
-
-  let category = document.getElementById('story-category').value;
-if (!category) category = 'General';
-
-const payload = {
-  title,
-  content,
-  category,
-  submitter_uuid: localStorage.getItem('submitter_id'),
-  turnstileToken: token
-};
-
-  if (!token) {
-    storyTurnstileWarning.classList.remove('hidden');
-    return;
-  }
-
-  const title = storyTitle.value.trim() || null;
-  const content = storyContent.value.trim();
-  if (content.length > MAX_COMMUNITY_POST_LENGTH) {
-    storyMessage.textContent = `Your story must be ${MAX_COMMUNITY_POST_LENGTH} characters or fewer.`;
-    storyMessage.className = 'message error';
-    return;
-  }
-  if (!content) {
-    storyMessage.textContent = 'Please write your story.';
-    storyMessage.className = 'message error';
-    return;
-  }
-
-  storySubmitBtn.disabled = true;
-
-  try {
-    const response = await fetch('https://api.namehim.app/submit-story', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        title,
-        content,
-        submitter_uuid: localStorage.getItem('submitter_id'),
-        turnstileToken: token
-      })
-    });
-    const result = await response.json();
-    if (!response.ok) {
-      throw new Error(result.error || 'Submission failed');
-    }
-
-    addStoryTimestamp();
-    storyMessage.textContent = 'Thank you. Your story has been submitted for review.';
-    storyMessage.className = 'message success';
-    storyForm.reset();
-    // Reset Turnstile widget for next use
-    if (window.turnstile && turnstileWidget) {
-      window.turnstile.reset(turnstileWidget);
-    }
-    // Refresh stories if still on community page
-    if (window.location.hash === '#/community') loadApprovedStories();
-  } catch (error) {
-    console.error('Story submission error:', error);
-    storyMessage.textContent = error.message;
-    storyMessage.className = 'message error';
-  } finally {
-    storySubmitBtn.disabled = false;
-  }
-}
 
     async function handleSubmit(event) {
       event.preventDefault();
@@ -2791,53 +2797,6 @@ const payload = {
 
       window.addEventListener('hashchange', renderRoute);
 
-      // --- Category filter for community stories ---
-let currentStoryCategory = 'all';
-
-function applyStoryFilters() {
-  if (activeSingleStoryId) return;
-  const searchQuery = (storySearch?.value || '').trim().toLowerCase();
-  let filtered = approvedStories.filter(story => {
-    const category = story.category || 'General';
-    if (currentStoryCategory !== 'all' && category !== currentStoryCategory) return false;
-    if (searchQuery) {
-      const blob = [story.title, story.content].join(' ').toLowerCase();
-      if (!blob.includes(searchQuery)) return false;
-    }
-    return true;
-  });
-  if (!filtered.length) {
-    storiesContainer.innerHTML = searchQuery
-      ? '<p>No approved stories match your search and category.</p>'
-      : '<p>No approved stories yet. Check back soon.</p>';
-    return;
-  }
-  let html = '';
-  for (const story of filtered) {
-    html += getStoryCardMarkup(story);
-  }
-  storiesContainer.innerHTML = html;
-}
-
-function setupCategoryFilters() {
-  const filterContainer = document.querySelector('.story-category-filters');
-  if (!filterContainer) return;
-  filterContainer.addEventListener('click', (e) => {
-    const btn = e.target.closest('.category-filter-btn');
-    if (!btn) return;
-    const category = btn.getAttribute('data-category');
-    if (!category) return;
-    // update active class
-    filterContainer.querySelectorAll('.category-filter-btn').forEach(btn => btn.classList.remove('active'));
-    btn.classList.add('active');
-    currentStoryCategory = category === 'all' ? 'all' : category;
-    applyStoryFilters();
-  });
-}
-
-// Call this inside your init() function, after loadApprovedStories is defined
-// e.g., add: setupCategoryFilters();
-
       window.addEventListener('load', function onWindowLoad() {
         if (mapContainer && mapContainer.style.display !== 'none') {
           refreshSimpleMap();
@@ -2956,6 +2915,7 @@ function setupCategoryFilters() {
       });
       reportForm.addEventListener('submit', handleSubmit);
       storyForm.addEventListener('submit', submitStory);
+      setupCategoryFilters();
       if (showStoryFormBtn) {
         showStoryFormBtn.addEventListener('click', openStoryForm);
       }
@@ -2977,7 +2937,7 @@ function setupCategoryFilters() {
         });
       }
       if (storySearch) {
-        storySearch.addEventListener('input', applyStorySearchFilter);
+        storySearch.addEventListener('input', applyStoryFilters);
       }
       if (clearStorySearch) {
         clearStorySearch.addEventListener('click', function onClearStorySearchClick() {
@@ -2985,7 +2945,7 @@ function setupCategoryFilters() {
             return;
           }
           storySearch.value = '';
-          applyStorySearchFilter();
+          applyStoryFilters();
         });
       }
     }
