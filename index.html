@@ -618,6 +618,22 @@
   font-size: 0.8rem;
   color: var(--muted);
 }
+.admin-reply {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  background: rgba(96, 165, 250, 0.1);
+  border-left: 3px solid var(--accent);
+  border-radius: 0.25rem;
+  font-size: 0.9rem;
+}
+.admin-reply h5 {
+  margin: 0 0 0.5rem 0;
+  color: var(--accent);
+  font-size: 0.85rem;
+}
+.admin-reply p {
+  margin: 0;
+}
     
   </style>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -2340,10 +2356,18 @@ async function loadMapStats() {
       else if (categoryValue === 'Question / Discussion') categoryClass = 'story-category-question';
       const categoryHtml = `<span class="story-category ${categoryClass}">${escapeHTML(categoryValue)}</span>`;
       const titleHtml = story.title ? `<h4 class="story-card-title">${escapeHTML(story.title)}</h4>` : '';
+      const adminReply = String(story.admin_reply || '').trim();
+      const adminReplyHtml = adminReply
+        ? `<div class="admin-reply">
+          <h5>Admin Reply</h5>
+          <p>${escapeHTML(adminReply)}</p>
+        </div>`
+        : '';
       return `
       <div class="story-card">
         <div class="story-card-header">${titleHtml}${categoryHtml}</div>
         <p>${escapeHTML(story.content)}</p>
+        ${adminReplyHtml}
         <div class="story-meta">— Anonymous, ${submittedAt}</div>
         <div class="story-actions">
           <button type="button" class="story-share-btn" data-story-id="${escapeHTML(story.id || '')}">Share</button>
@@ -2405,7 +2429,7 @@ async function loadMapStats() {
       storiesContainer.innerHTML = '<p>Loading stories...</p>';
       let query = supabaseClient
         .from('stories')
-        .select('id, title, content, created_at, category')
+        .select('id, title, content, created_at, category, admin_reply')
         .eq('is_approved', true);
       if (storyId) {
         query = query.eq('id', storyId).limit(1);
