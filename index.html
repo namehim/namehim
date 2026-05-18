@@ -2094,13 +2094,16 @@ function addStoryTimestamp() {
       browsePagination.innerHTML = '';
       const totalPages = Math.ceil(totalReports / REPORTS_PER_PAGE);
       const maxVisiblePageButtons = 3;
+      const normalizedPage = Number.isFinite(Number(page))
+        ? Math.min(Math.max(Math.trunc(Number(page)), 1), Math.max(totalPages, 1))
+        : 1;
 
       if (totalPages <= 1) {
         return;
       }
 
-      const isAtFirstPage = page <= 1;
-      const isAtLastPage = page >= totalPages;
+      const isAtFirstPage = normalizedPage <= 1;
+      const isAtLastPage = normalizedPage >= totalPages;
       let paginationHTML = '';
 
       paginationHTML += '<button type="button" data-page-nav="first"' + (isAtFirstPage ? ' disabled' : '') + '>First</button>';
@@ -2111,7 +2114,7 @@ function addStoryTimestamp() {
 
       if (totalPages > maxVisiblePageButtons) {
         const halfWindow = Math.floor(maxVisiblePageButtons / 2);
-        startPage = Math.max(1, page - halfWindow);
+        startPage = Math.max(1, normalizedPage - halfWindow);
         endPage = startPage + maxVisiblePageButtons - 1;
 
         if (endPage > totalPages) {
@@ -2128,8 +2131,8 @@ function addStoryTimestamp() {
       }
 
       for (let pageNumber = startPage; pageNumber <= endPage; pageNumber += 1) {
-        const activeClass = pageNumber === page ? ' class="active"' : '';
-        const currentPageAttr = pageNumber === page ? ' aria-current="page"' : '';
+        const activeClass = pageNumber === normalizedPage ? ' class="active"' : '';
+        const currentPageAttr = pageNumber === normalizedPage ? ' aria-current="page"' : '';
         paginationHTML += '<button type="button" data-page="' + pageNumber + '"' + activeClass + currentPageAttr + '>' + pageNumber + '</button>';
       }
 
