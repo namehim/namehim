@@ -651,6 +651,7 @@
     
   </style>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://js.hcaptcha.com/1/api.js" async defer></script>
   <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
   <script src="mapdata.js?v=2026-04-24-3"></script>
   <script src="usmap.js?v=2026-04-24-4"></script>
@@ -976,11 +977,12 @@
 
           <div class="row">
             <div
-              class="cf-turnstile"
-              data-sitekey="0x4AAAAAADCC51BDmfY6JgSc"
+              id="report-hcaptcha"
+              class="h-captcha"
+              data-sitekey="097282a4-2ff0-44e4-bb50-f414265e1124"
               data-theme="dark"
             ></div>
-            <p id="turnstile-warning" class="warning hidden">Please complete the CAPTCHA verification.</p>
+            <p id="hcaptcha-warning" class="warning hidden">Please complete the CAPTCHA verification.</p>
           </div>
 
           <p id="rate-warning" class="message error hidden">You have reached the limit of 3 submissions in the last hour. Please try again later.</p>
@@ -1104,7 +1106,7 @@
     const reportForm = document.getElementById('report-form');
     const submitBtn = document.getElementById('submit-btn');
     const rateWarning = document.getElementById('rate-warning');
-    const turnstileWarning = document.getElementById('turnstile-warning');
+    const hcaptchaWarning = document.getElementById('hcaptcha-warning');
     const categoryContainer = document.getElementById('category-checkboxes');
     const reportCount = document.getElementById('report-count');
     const countryField = document.getElementById('country');
@@ -2505,15 +2507,19 @@ async function loadMapStats() {
       loadApprovedStories({ storyId });
     }
 
-    function getTurnstileToken() {
-      const tokenField = document.querySelector('[name="cf-turnstile-response"]');
+    function getHCaptchaToken() {
+      if (window.hcaptcha && typeof window.hcaptcha.getResponse === 'function') {
+        const widget = document.getElementById('report-hcaptcha');
+        return window.hcaptcha.getResponse(widget) || '';
+      }
+      const tokenField = document.querySelector('[name="h-captcha-response"]');
       return tokenField && tokenField.value ? tokenField.value : '';
     }
 
-    function resetTurnstileWidget() {
-      if (window.turnstile && typeof window.turnstile.reset === 'function') {
-        // Find the first turnstile iframe and reset
-        window.turnstile.reset();
+    function resetHCaptchaWidget() {
+      if (window.hcaptcha && typeof window.hcaptcha.reset === 'function') {
+        const widget = document.getElementById('report-hcaptcha');
+        window.hcaptcha.reset(widget);
       }
     }
 
@@ -2641,12 +2647,12 @@ async function loadMapStats() {
     submitMessage.textContent = 'Report submitted successfully.';
     submitMessage.className = 'message success';
     reportForm.reset();
-    resetTurnstileWidget();
+    resetHCaptchaWidget();
     return;
     }
       submitMessage.textContent = '';
       submitMessage.className = 'message';
-      turnstileWarning.classList.add('hidden');
+      hcaptchaWarning.classList.add('hidden');
 
       if (updateRateLimitUI()) {
         submitMessage.textContent = 'Rate limit reached. Please wait before submitting again.';
@@ -2654,9 +2660,9 @@ async function loadMapStats() {
         return;
       }
 
-      const token = getTurnstileToken();
+      const token = getHCaptchaToken();
       if (!token) {
-        turnstileWarning.classList.remove('hidden');
+        hcaptchaWarning.classList.remove('hidden');
         return;
       }
 
@@ -2667,7 +2673,7 @@ async function loadMapStats() {
         country: sanitizeReportText(document.getElementById('country').value, MAX_BROWSE_FIELD_LENGTH),
         categories: getSelectedCategories(),
         submitter_uuid: getOrCreateSubmitterId(),
-        turnstileToken: token
+        hcaptchaToken: token
       };
 
       // Validation (keep your existing checks)
@@ -2731,14 +2737,14 @@ async function loadMapStats() {
         reportForm.reset();
         renderStateField();
         populateBrowseStateSelect();
-        resetTurnstileWidget();
+        resetHCaptchaWidget();
         submitMessage.textContent = 'Report submitted successfully.';
         submitMessage.className = 'message success';
         await loadReports();
         window.location.hash = '#/browse';
       } catch (error) {
         console.error('Submission error:', error);
-        resetTurnstileWidget();
+        resetHCaptchaWidget();
         submitMessage.textContent = error.message;
         submitMessage.className = 'message error';
       } finally {

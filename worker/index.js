@@ -219,18 +219,23 @@ async function handleSubmitReport(request, env) {
     return errorResponse("Missing required fields", 400);
   }
 
-  const token = payload.turnstileToken;
+  const token = payload.hcaptchaToken;
   if (!token) return errorResponse("CAPTCHA token missing", 400);
 
-  const verifyRes = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+  const verifyRes = await fetch("https://api.hcaptcha.com/siteverify", {
     method: "POST",
-    body: new URLSearchParams({ secret: env.TURNSTILE_SECRET_KEY, response: token }),
+    body: new URLSearchParams({
+      secret: env.HCAPTCHA_SECRET,
+      response: token,
+      remoteip: ip || "",
+      sitekey: env.HCAPTCHA_SITEKEY || ""
+    }),
     headers: { "Content-Type": "application/x-www-form-urlencoded" }
   });
   const verifyData = await verifyRes.json();
   if (!verifyData.success) return errorResponse("Invalid CAPTCHA", 400);
 
-  const { turnstileToken, ...reportData } = payload;
+  const { hcaptchaToken, ...reportData } = payload;
   const insertRes = await supabaseFetch(supabaseUrl, supabaseKey, "/rest/v1/reports", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
