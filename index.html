@@ -435,6 +435,18 @@
     }
 
     .warning { color: #f59e0b; font-size: 0.85rem; margin-top: 0.5rem; }
+    .submit-form-alert {
+      margin: 0 0 1rem;
+      padding: 0.85rem 1rem;
+      border-radius: 10px;
+      border: 1px solid #f87171;
+      background: #2a1414;
+      color: #ffe4e6;
+      text-align: center;
+      font-size: 1rem;
+      font-weight: 700;
+      line-height: 1.4;
+    }
     .hidden { display: none !important; }
     .map-toggle-wrap {
       margin-bottom: 0.65rem;
@@ -731,6 +743,7 @@
       <section id="page-submit" class="page">
         <h2>Submit a Report</h2>
         <form id="report-form" class="panel" novalidate>
+          <p class="submit-form-alert">Do not enter your information here. Enter the name of the person you are reporting.</p>
           <div class="row">
             <label for="name">Name *</label>
             <input id="name" type="text" maxlength="20" required inputmode="text" />
