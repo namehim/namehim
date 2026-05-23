@@ -2099,7 +2099,9 @@ function addStoryTimestamp() {
           <td data-label="Categories"><div class="pills">${pillHTML}</div></td>
           <td data-label="Actions">
             <div class="row-actions">
+              <!-- Report this entry feature temporarily disabled.
               <button type="button" class="report-entry-btn" data-report-id="${escapeHTML(report.id || '')}">Report this entry</button>
+              -->
               <button type="button" class="report-share-btn" data-report-id="${escapeHTML(report.id || '')}">Share</button>
             </div>
           </td>
@@ -2742,46 +2744,47 @@ async function loadMapStats() {
       return;
     }
 
-    const button = event.target.closest('.report-entry-btn');
-    if (!button) return;
-    const reportId = button.getAttribute('data-report-id');
-    if (!reportId) return;
-
-    let reason = prompt(
-      'Why are you reporting this entry? (Optional, max 250 characters)\n\nThis helps moderators understand the issue.',
-      ''
-    );
-    if (reason === null) return;
-    reason = reason.trim().slice(0, 250);
-    if (reason === '') reason = null;
-
-    const submitterId = localStorage.getItem('submitter_id') || 'anonymous';
-
-    const originalText = button.textContent;
-    button.textContent = 'Submitting...';
-    button.disabled = true;
-
-    try {
-      const { error } = await supabaseClient
-        .from('report_flags')
-        .insert({
-          report_id: parseInt(reportId, 10),
-          reason: reason,
-          flagged_by: submitterId
-        });
-
-      if (error) {
-        console.error(error);
-        alert('Could not flag entry. Please try again later.');
-      } else {
-        alert('Entry #' + reportId + ' has been flagged for review.\nThank you for your report.');
-      }
-    } catch (err) {
-      alert('An error occurred. Please try again.');
-    } finally {
-      button.textContent = originalText;
-      button.disabled = false;
-    }
+    // Report this entry feature temporarily disabled.
+    // const button = event.target.closest('.report-entry-btn');
+    // if (!button) return;
+    // const reportId = button.getAttribute('data-report-id');
+    // if (!reportId) return;
+    //
+    // let reason = prompt(
+    //   'Why are you reporting this entry? (Optional, max 250 characters)\n\nThis helps moderators understand the issue.',
+    //   ''
+    // );
+    // if (reason === null) return;
+    // reason = reason.trim().slice(0, 250);
+    // if (reason === '') reason = null;
+    //
+    // const submitterId = localStorage.getItem('submitter_id') || 'anonymous';
+    //
+    // const originalText = button.textContent;
+    // button.textContent = 'Submitting...';
+    // button.disabled = true;
+    //
+    // try {
+    //   const { error } = await supabaseClient
+    //     .from('report_flags')
+    //     .insert({
+    //       report_id: parseInt(reportId, 10),
+    //       reason: reason,
+    //       flagged_by: submitterId
+    //     });
+    //
+    //   if (error) {
+    //     console.error(error);
+    //     alert('Could not flag entry. Please try again later.');
+    //   } else {
+    //     alert('Entry #' + reportId + ' has been flagged for review.\nThank you for your report.');
+    //   }
+    // } catch (err) {
+    //   alert('An error occurred. Please try again.');
+    // } finally {
+    //   button.textContent = originalText;
+    //   button.disabled = false;
+    // }
   });
 }
 
