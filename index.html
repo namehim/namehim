@@ -652,7 +652,6 @@
   </style>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://js.hcaptcha.com/1/api.js" async defer></script>
-  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
   <script src="mapdata.js?v=2026-04-24-3"></script>
   <script src="usmap.js?v=2026-04-24-4"></script>
   <script src="wmapdata.js?v=2026-04-25-1"></script>
@@ -1021,7 +1020,12 @@
   </select>
 </div>
     <div class="row">
-      <div class="cf-turnstile" id="story-turnstile" data-theme="dark"></div>
+      <div
+        id="story-hcaptcha"
+        class="h-captcha"
+        data-sitekey="097282a4-2ff0-44e4-bb50-f414265e1124"
+        data-theme="dark"
+      ></div>
       <p id="story-turnstile-warning" class="warning hidden">Please complete the CAPTCHA.</p>
     </div>
     <p id="story-rate-warning" class="message error hidden">You've reached the limit. Please wait before submitting another story.</p>
@@ -2552,29 +2556,16 @@ async function loadMapStats() {
     }
 
     function openStoryForm() {
-  if (!storyForm || !showStoryFormBtn) return;
-  storyForm.classList.remove('hidden');
-  showStoryFormBtn.classList.add('hidden');
-  showStoryFormBtn.setAttribute('aria-expanded', 'true');
+      if (!storyForm || !showStoryFormBtn) return;
+      storyForm.classList.remove('hidden');
+      showStoryFormBtn.classList.add('hidden');
+      showStoryFormBtn.setAttribute('aria-expanded', 'true');
 
-  const turnstileDiv = storyForm.querySelector('.cf-turnstile');
-  if (!turnstileDiv) return;
-
-  // Ensure sitekey is set (only needed once)
-  if (!turnstileDiv.getAttribute('data-sitekey')) {
-    turnstileDiv.setAttribute('data-sitekey', '0x4AAAAAADCC51BDmfY6JgSc');
-  }
-
-  // Check if Turnstile already rendered a widget inside this div
-  const existingWidget = turnstileDiv.querySelector('iframe');
-  if (existingWidget && window.turnstile) {
-    // Widget exists – just reset it
-    window.turnstile.reset(turnstileDiv);
-  } else if (window.turnstile) {
-    // Widget does not exist – render it now
-    window.turnstile.render(turnstileDiv);
-  }
-}
+      if (!window.hcaptcha || typeof window.hcaptcha.reset !== 'function') return;
+      const storyTokenField = document.querySelector('#story-form [name="h-captcha-response"]');
+      if (!storyTokenField || !storyTokenField.value) return;
+      window.hcaptcha.reset();
+    }
 
     async function submitStory(event) {
       event.preventDefault();
@@ -2602,21 +2593,12 @@ async function loadMapStats() {
       let category = document.getElementById('story-category').value;
       if (!category) category = 'General';
 
-      const turnstileWidget = storyForm.querySelector('.cf-turnstile');
-      if (!turnstileWidget) {
-        storyMessage.textContent = 'Captcha widget missing. Please refresh the page.';
-        storyMessage.className = 'message error';
-        return;
-      }
-
-      let token = null;
-      if (window.turnstile) {
-        token = window.turnstile.getResponse(turnstileWidget);
-        if (!token) {
-          window.turnstile.reset(turnstileWidget);
-          await new Promise((resolve) => setTimeout(resolve, 500));
-          token = window.turnstile.getResponse(turnstileWidget);
-        }
+      let token = '';
+      const storyTokenField = document.querySelector('#story-form [name="h-captcha-response"]');
+      if (storyTokenField && storyTokenField.value) {
+        token = storyTokenField.value;
+      } else if (window.hcaptcha && typeof window.hcaptcha.getResponse === 'function') {
+        token = window.hcaptcha.getResponse();
       }
 
       if (!token) {
@@ -2635,7 +2617,7 @@ async function loadMapStats() {
             content,
             category,
             submitter_uuid: localStorage.getItem('submitter_id'),
-            turnstileToken: token
+            hcaptchaToken: token
           })
         });
         const result = await response.json();
@@ -2647,9 +2629,7 @@ async function loadMapStats() {
         storyMessage.textContent = 'Thank you. Your story has been submitted for review.';
         storyMessage.className = 'message success';
         storyForm.reset();
-        if (window.turnstile && turnstileWidget) {
-          window.turnstile.reset(turnstileWidget);
-        }
+        if (window.hcaptcha && typeof window.hcaptcha.reset === 'function') window.hcaptcha.reset();
         if (window.location.hash === '#/community') loadApprovedStories();
       } catch (error) {
         console.error('Story submission error:', error);
