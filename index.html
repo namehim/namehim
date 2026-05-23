@@ -982,6 +982,9 @@
               data-sitekey="097282a4-2ff0-44e4-bb50-f414265e1124"
               data-theme="dark"
               data-hcaptcha-type="challenge"
+              data-callback="onHCaptchaSuccess"
+              data-expired-callback="onHCaptchaExpired"
+              data-error-callback="onHCaptchaError"
             ></div>
             <p id="hcaptcha-warning" class="warning hidden">Please complete the CAPTCHA verification.</p>
           </div>
@@ -2508,19 +2511,38 @@ async function loadMapStats() {
       loadApprovedStories({ storyId });
     }
 
+
+    let hcaptchaTokenValue = '';
+
+    window.onHCaptchaSuccess = function onHCaptchaSuccess(token) {
+      hcaptchaTokenValue = token || '';
+      if (hcaptchaWarning) hcaptchaWarning.classList.add('hidden');
+    };
+
+    window.onHCaptchaExpired = function onHCaptchaExpired() {
+      hcaptchaTokenValue = '';
+    };
+
+    window.onHCaptchaError = function onHCaptchaError() {
+      hcaptchaTokenValue = '';
+    };
+
     function getHCaptchaToken() {
+      if (hcaptchaTokenValue) return hcaptchaTokenValue;
+
       if (window.hcaptcha && typeof window.hcaptcha.getResponse === 'function') {
-        const widget = document.getElementById('report-hcaptcha');
-        return window.hcaptcha.getResponse(widget) || '';
+        const token = window.hcaptcha.getResponse();
+        if (token) return token;
       }
+
       const tokenField = document.querySelector('[name="h-captcha-response"]');
       return tokenField && tokenField.value ? tokenField.value : '';
     }
 
     function resetHCaptchaWidget() {
+      hcaptchaTokenValue = '';
       if (window.hcaptcha && typeof window.hcaptcha.reset === 'function') {
-        const widget = document.getElementById('report-hcaptcha');
-        window.hcaptcha.reset(widget);
+        window.hcaptcha.reset();
       }
     }
 
