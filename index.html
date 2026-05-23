@@ -2955,24 +2955,34 @@ async function loadMapStats() {
 
   const pageValue = Number(target.getAttribute('data-page'));
   const navDirection = target.getAttribute('data-page-nav');
+  const isClientFilteredView = fullListLoaded;
+  const reportsForClientPagination = Array.isArray(currentFilteredReports) ? currentFilteredReports : allReports;
+  const totalPages = isClientFilteredView
+    ? Math.max(1, Math.ceil(reportsForClientPagination.length / REPORTS_PER_PAGE))
+    : Math.max(1, Math.ceil(allTotalCount / REPORTS_PER_PAGE));
+  const activePage = isClientFilteredView ? currentPage : currentBrowseServerPage;
 
-  // Get the current page from the active button
-  const activeBtn = browsePagination.querySelector('button.active');
-  let currentPage = activeBtn ? parseInt(activeBtn.textContent) : 1;
-
+  let nextPage = activePage;
   if (Number.isInteger(pageValue) && pageValue > 0) {
-    loadReports(pageValue);
-  } else if (navDirection === 'prev' && currentPage > 1) {
-    loadReports(currentPage - 1);
+    nextPage = pageValue;
+  } else if (navDirection === 'prev') {
+    nextPage = activePage - 1;
   } else if (navDirection === 'next') {
-    const totalPages = Math.ceil(allTotalCount / REPORTS_PER_PAGE);
-    if (currentPage < totalPages) loadReports(currentPage + 1);
+    nextPage = activePage + 1;
   } else if (navDirection === 'first') {
-    loadReports(1);
+    nextPage = 1;
   } else if (navDirection === 'last') {
-    const totalPages = Math.ceil(allTotalCount / REPORTS_PER_PAGE);
-    loadReports(totalPages);
+    nextPage = totalPages;
   }
+
+  nextPage = Math.min(Math.max(nextPage, 1), totalPages);
+
+  if (isClientFilteredView) {
+    renderPagedReports(reportsForClientPagination, nextPage);
+    return;
+  }
+
+  loadReports(nextPage);
       });
       reportForm.addEventListener('submit', handleSubmit);
       storyForm.addEventListener('submit', submitStory);
