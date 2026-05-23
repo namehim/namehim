@@ -227,8 +227,7 @@ async function handleSubmitReport(request, env) {
     body: new URLSearchParams({
       secret: env.HCAPTCHA_SECRET,
       response: token,
-      remoteip: ip || "",
-      sitekey: env.HCAPTCHA_SITEKEY || ""
+      remoteip: ip || ""
     }),
     headers: { "Content-Type": "application/x-www-form-urlencoded" }
   });
@@ -290,16 +289,20 @@ async function handleSubmitStory(request, env) {
     return errorResponse("Invalid JSON", 400);
   }
 
-  const { title, content, submitter_uuid, turnstileToken } = payload;
+  const { title, content, submitter_uuid, hcaptchaToken } = payload;
   if (!content || typeof content !== "string") {
     return errorResponse("Missing story content", 400);
   }
   if (content.length > 1000) return errorResponse("Story too long", 400);
-  if (!turnstileToken) return errorResponse("CAPTCHA token missing", 400);
+  if (!hcaptchaToken) return errorResponse("CAPTCHA token missing", 400);
 
-  const verifyRes = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+  const verifyRes = await fetch("https://api.hcaptcha.com/siteverify", {
     method: "POST",
-    body: new URLSearchParams({ secret: env.TURNSTILE_SECRET_KEY, response: turnstileToken }),
+    body: new URLSearchParams({
+      secret: env.HCAPTCHA_SECRET,
+      response: hcaptchaToken,
+      remoteip: ip || ""
+    }),
     headers: { "Content-Type": "application/x-www-form-urlencoded" }
   });
   const verifyData = await verifyRes.json();
