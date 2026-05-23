@@ -981,6 +981,7 @@
               data-sitekey="097282a4-2ff0-44e4-bb50-f414265e1124"
               data-theme="dark"
               data-hcaptcha-type="challenge"
+              data-size="normal"
               data-callback="onHCaptchaSuccess"
               data-expired-callback="onHCaptchaExpired"
               data-error-callback="onHCaptchaError"
@@ -1025,6 +1026,10 @@
         class="h-captcha"
         data-sitekey="097282a4-2ff0-44e4-bb50-f414265e1124"
         data-theme="dark"
+        data-size="normal"
+        data-callback="onStoryHCaptchaSuccess"
+        data-expired-callback="onStoryHCaptchaExpired"
+        data-error-callback="onStoryHCaptchaError"
       ></div>
       <p id="story-turnstile-warning" class="warning hidden">Please complete the CAPTCHA.</p>
     </div>
@@ -2517,6 +2522,7 @@ async function loadMapStats() {
 
 
     let hcaptchaTokenValue = '';
+    let storyHcaptchaTokenValue = '';
 
     window.onHCaptchaSuccess = function onHCaptchaSuccess(token) {
       hcaptchaTokenValue = token || '';
@@ -2529,6 +2535,16 @@ async function loadMapStats() {
 
     window.onHCaptchaError = function onHCaptchaError() {
       hcaptchaTokenValue = '';
+    };
+    window.onStoryHCaptchaSuccess = function onStoryHCaptchaSuccess(token) {
+      storyHcaptchaTokenValue = token || '';
+      if (storyTurnstileWarning) storyTurnstileWarning.classList.add('hidden');
+    };
+    window.onStoryHCaptchaExpired = function onStoryHCaptchaExpired() {
+      storyHcaptchaTokenValue = '';
+    };
+    window.onStoryHCaptchaError = function onStoryHCaptchaError() {
+      storyHcaptchaTokenValue = '';
     };
 
     function getHCaptchaToken() {
@@ -2593,7 +2609,7 @@ async function loadMapStats() {
       let category = document.getElementById('story-category').value;
       if (!category) category = 'General';
 
-      let token = '';
+      let token = storyHcaptchaTokenValue || '';
       const storyTokenField = document.querySelector('#story-form [name="h-captcha-response"]');
       if (storyTokenField && storyTokenField.value) {
         token = storyTokenField.value;
@@ -2629,6 +2645,7 @@ async function loadMapStats() {
         storyMessage.textContent = 'Thank you. Your story has been submitted for review.';
         storyMessage.className = 'message success';
         storyForm.reset();
+        storyHcaptchaTokenValue = '';
         if (window.hcaptcha && typeof window.hcaptcha.reset === 'function') window.hcaptcha.reset();
         if (window.location.hash === '#/community') loadApprovedStories();
       } catch (error) {

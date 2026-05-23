@@ -232,7 +232,11 @@ async function handleSubmitReport(request, env) {
     headers: { "Content-Type": "application/x-www-form-urlencoded" }
   });
   const verifyData = await verifyRes.json();
-  if (!verifyData.success) return errorResponse("Invalid CAPTCHA", 400);
+  if (!verifyData.success) {
+    const errorCodes = Array.isArray(verifyData["error-codes"]) ? verifyData["error-codes"].join(", ") : "unknown";
+    console.error("hCaptcha verify failed (/submit):", errorCodes, verifyData);
+    return errorResponse(`Invalid CAPTCHA (${errorCodes})`, 400);
+  }
 
   const { hcaptchaToken, ...reportData } = payload;
   const insertRes = await supabaseFetch(supabaseUrl, supabaseKey, "/rest/v1/reports", {
@@ -306,7 +310,11 @@ async function handleSubmitStory(request, env) {
     headers: { "Content-Type": "application/x-www-form-urlencoded" }
   });
   const verifyData = await verifyRes.json();
-  if (!verifyData.success) return errorResponse("Invalid CAPTCHA", 400);
+  if (!verifyData.success) {
+    const errorCodes = Array.isArray(verifyData["error-codes"]) ? verifyData["error-codes"].join(", ") : "unknown";
+    console.error("hCaptcha verify failed (/submit-story):", errorCodes, verifyData);
+    return errorResponse(`Invalid CAPTCHA (${errorCodes})`, 400);
+  }
 
   const insertRes = await supabaseFetch(supabaseUrl, supabaseKey, "/rest/v1/stories", {
     method: "POST",
