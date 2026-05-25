@@ -193,7 +193,10 @@ async function handleSubmitReport(request, env) {
   const rateLimitOptions = {
     key: `${ip}:submit`,
     limitKey: "submit",
-    windows: [{ limit: 3, window: 3600 }] // 3 per hour (change to 1 if you prefer)
+    windows: [
+      { limit: 1, window: 60 },
+      { limit: 3, window: 3600 }
+    ]
   };
   try {
     const { success } = await env.RATELIMITER.limit(rateLimitOptions);
@@ -271,7 +274,10 @@ async function handleSubmitStory(request, env) {
   const rateLimitOptions = {
     key: `${ip}:story`,
     limitKey: "story",
-    windows: [{ limit: 3, window: 3600 }] // 3 per hour
+    windows: [
+      { limit: 1, window: 60 },
+      { limit: 3, window: 3600 }
+    ]
   };
   try {
     const { success } = await env.RATELIMITER.limit(rateLimitOptions);
