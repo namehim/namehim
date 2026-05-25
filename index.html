@@ -692,6 +692,15 @@
         <p>See someone you recognize? Trust your instincts. Do your own research. And if you have information to share, use the Submit tab.</p>
         <div class="controls">
           <input id="report-search" class="search-input" type="text" maxlength="20" placeholder="Search by name, city, state, or country..." />
+          <select id="report-sort" aria-label="Sort reports">
+            <option value="created_at:desc">Newest first</option>
+            <option value="created_at:asc">Oldest first</option>
+            <option value="name:asc">Name A to Z</option>
+            <option value="name:desc">Name Z to A</option>
+          </select>
+          <select id="report-category-filter" aria-label="Filter reports by category">
+            <option value="">All categories</option>
+          </select>
           <button id="clear-search" type="button">Clear</button>
         </div>
         <div id="single-report-controls" class="single-report-controls hidden">
@@ -1113,6 +1122,8 @@
     const submitMessage = document.getElementById('submit-message');
     const reportSearch = document.getElementById('report-search');
     const clearSearch = document.getElementById('clear-search');
+    const reportSort = document.getElementById('report-sort');
+    const reportCategoryFilter = document.getElementById('report-category-filter');
     const singleReportControls = document.getElementById('single-report-controls');
     const backToAllReportsBtn = document.getElementById('back-to-all-reports');
     const reportsBody = document.getElementById('reports-body');
@@ -1214,6 +1225,26 @@
     let fullReportsList = [];
     let fullListLoaded = false;
     const DEFAULT_BROWSE_PAGE = 1;
+
+    function parseSortSelection(rawValue) {
+      const normalized = String(rawValue || '').trim();
+      const [sortByRaw, sortDirectionRaw] = normalized.split(':');
+      const sortBy = sortByRaw === 'name' ? 'name' : 'created_at';
+      const sortDirection = sortDirectionRaw === 'asc' ? 'asc' : 'desc';
+      return { sortBy, sortDirection };
+    }
+
+    function getActiveCategoryFilter() {
+      return String((reportCategoryFilter && reportCategoryFilter.value) || '').trim().toLowerCase();
+    }
+
+    function populateBrowseCategoryFilter() {
+      if (!reportCategoryFilter) return;
+      const options = CATEGORIES
+        .map((category) => '<option value="' + escapeHTML(category) + '">' + escapeHTML(toTitleCase(category)) + '</option>')
+        .join('');
+      reportCategoryFilter.innerHTML = '<option value="">All categories</option>' + options;
+    }
 
 
     // --- ADDED: submitter_uuid management (critical fix) ---
@@ -2224,8 +2255,10 @@ function addStoryTimestamp() {
       const query = (reportSearch.value || '').trim().toLowerCase();
       const selectedCountry = String((browseCountrySelect && browseCountrySelect.value) || '').trim().toLowerCase();
       const selectedState = normalizeStateForFiltering((browseStateSelect && browseStateSelect.value) || '');
+      const selectedCategory = getActiveCategoryFilter();
+      const { sortBy, sortDirection } = parseSortSelection(reportSort && reportSort.value);
 
-      if (!query && !selectedCountry && !selectedState) {
+      if (!query && !selectedCountry && !selectedState && !selectedCategory) {
         if (!fullListLoaded) {
           renderReportRows(allReports);
           renderPagination(allTotalCount, currentBrowseServerPage);
@@ -2248,12 +2281,25 @@ function addStoryTimestamp() {
           .join(' ');
         const reportCountry = normalizeCountryForFiltering(report.country);
         const reportState = normalizeStateForFiltering(report.state);
+        const reportCategories = Array.isArray(report.categories) ? report.categories.map((item) => String(item || '').toLowerCase()) : [];
 
         const matchesQuery = !query || blob.includes(query);
         const matchesCountry = !selectedCountry || reportCountry === normalizeCountryForFiltering(selectedCountry);
         const matchesState = !selectedState || reportState === selectedState;
+        const matchesCategory = !selectedCategory || reportCategories.includes(selectedCategory);
 
-        return matchesQuery && matchesCountry && matchesState;
+        return matchesQuery && matchesCountry && matchesState && matchesCategory;
+      });
+
+      filtered.sort((a, b) => {
+        if (sortBy === 'name') {
+          const cmp = String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' });
+          if (cmp !== 0) return sortDirection === 'asc' ? cmp : -cmp;
+        } else {
+          const dateCmp = (Date.parse(a.created_at || '') || 0) - (Date.parse(b.created_at || '') || 0);
+          if (dateCmp !== 0) return sortDirection === 'asc' ? dateCmp : -dateCmp;
+        }
+        return (Number(a.id) || 0) - (Number(b.id) || 0);
       });
 
       allReports = filtered;
@@ -2272,7 +2318,18 @@ function addStoryTimestamp() {
   startReportCountLoadingAnimation();
 
   const limit = REPORTS_PER_PAGE;
-  const WORKER_URL = `https://api.namehim.app/reports?page=${page}&limit=${limit}`;
+  const { sortBy, sortDirection } = parseSortSelection(reportSort && reportSort.value);
+  const selectedCategory = getActiveCategoryFilter();
+  const params = new URLSearchParams({
+    page: String(page),
+    limit: String(limit),
+    sortBy,
+    sortDirection
+  });
+  if (selectedCategory) {
+    params.set('category', selectedCategory);
+  }
+  const WORKER_URL = `https://api.namehim.app/reports?${params.toString()}`;
 
   try {
     const response = await fetch(WORKER_URL);
@@ -2892,6 +2949,7 @@ async function loadMapStats() {
       renderStateField();
       populateBrowseStateSelect();
       populateBrowseCountrySelect();
+      populateBrowseCategoryFilter();
       updateBrowseLocationFiltersUI();
       initMapToggle();
 
@@ -2908,6 +2966,12 @@ async function loadMapStats() {
       bindFieldLengthLimits();
       clearSearch.addEventListener('click', async function clearSearchInput() {
         reportSearch.value = '';
+        if (reportSort) {
+          reportSort.value = 'created_at:desc';
+        }
+        if (reportCategoryFilter) {
+          reportCategoryFilter.value = '';
+        }
         if (browseCountrySelect) {
           browseCountrySelect.value = '';
         }
@@ -2973,6 +3037,24 @@ async function loadMapStats() {
             window.selectWorldCountryOnMapByName(selectedCountry);
           }
           updateBrowseLocationFiltersUI();
+          applySearchFilter();
+        });
+      }
+      if (reportSort) {
+        reportSort.addEventListener('change', async function onReportSortChange() {
+          if (!fullListLoaded && !(reportSearch.value || '').trim() && !getActiveCategoryFilter()) {
+            await loadReports(DEFAULT_BROWSE_PAGE);
+            return;
+          }
+          applySearchFilter({ preservePage: true });
+        });
+      }
+      if (reportCategoryFilter) {
+        reportCategoryFilter.addEventListener('change', async function onCategoryFilterChange() {
+          if (!fullListLoaded && !(reportSearch.value || '').trim()) {
+            await loadReports(DEFAULT_BROWSE_PAGE);
+            return;
+          }
           applySearchFilter();
         });
       }
