@@ -45,7 +45,9 @@ export default {
     if (request.method === "GET" && url.pathname === "/reports") {
       const page = parseInt(url.searchParams.get("page")) || 1;
       const limit = parseInt(url.searchParams.get("limit")) || 50;
-      const offset = (page - 1) * limit;
+      const sortBy = normalizeSortBy(url.searchParams.get("sortBy"));
+      const sortDirection = normalizeSortDirection(url.searchParams.get("sortDirection"));
+      const category = normalizeCategoryFilter(url.searchParams.get("category"));
 
       let cached = null;
       try {
@@ -68,13 +70,18 @@ export default {
         return new Response(JSON.stringify({ error: "Service unavailable" }), { status: 503, headers: corsHeaders() });
       }
       
-      const total = reports.length;
-      const paginatedReports = reports.slice(offset, offset + limit);
+      const preparedReports = sortAndFilterReports(reports, { sortBy, sortDirection, category });
+      const total = preparedReports.length;
+      const offset = (page - 1) * limit;
+      const paginatedReports = preparedReports.slice(offset, offset + limit);
       
       return new Response(JSON.stringify({
         total,
         page,
         limit,
+        sortBy,
+        sortDirection,
+        category,
         reports: paginatedReports
       }), {
         status: 200,
@@ -151,7 +158,12 @@ export default {
 
     if (cached && Array.isArray(cached)) {
       ctx.waitUntil(refreshIfStale(env));
-      return new Response(JSON.stringify(cached), {
+      const preparedReports = sortAndFilterReports(cached, {
+        sortBy: url.searchParams.get("sortBy"),
+        sortDirection: url.searchParams.get("sortDirection"),
+        category: url.searchParams.get("category")
+      });
+      return new Response(JSON.stringify(preparedReports), {
         status: 200,
         headers: {
           "Content-Type": "application/json",
@@ -164,11 +176,16 @@ export default {
     try {
       const reports = await fetchAllReports(env);
       if (reports && reports.length) {
+        const preparedReports = sortAndFilterReports(reports, {
+          sortBy: url.searchParams.get("sortBy"),
+          sortDirection: url.searchParams.get("sortDirection"),
+          category: url.searchParams.get("category")
+        });
         if (env.CACHE_KV) {
           await env.CACHE_KV.put(CACHE_KEY, JSON.stringify(reports));
           await env.CACHE_KV.put(LAST_SUCCESS_KEY, Date.now().toString());
         }
-        return new Response(JSON.stringify(reports), {
+        return new Response(JSON.stringify(preparedReports), {
           status: 200,
           headers: {
             "Content-Type": "application/json",
@@ -353,6 +370,48 @@ function corsHeaders() {
     "Content-Type": "application/json",
     "Access-Control-Allow-Origin": "https://namehim.app"
   };
+}
+
+function normalizeSortBy(value) {
+  const sortBy = String(value || "").trim().toLowerCase();
+  return sortBy === "name" ? "name" : "created_at";
+}
+
+function normalizeSortDirection(value) {
+  const direction = String(value || "").trim().toLowerCase();
+  return direction === "asc" ? "asc" : "desc";
+}
+
+function normalizeCategoryFilter(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function sortAndFilterReports(reports, options = {}) {
+  const sortBy = normalizeSortBy(options.sortBy);
+  const sortDirection = normalizeSortDirection(options.sortDirection);
+  const category = normalizeCategoryFilter(options.category);
+  const directionFactor = sortDirection === "asc" ? 1 : -1;
+
+  const filtered = category
+    ? reports.filter((report) => Array.isArray(report?.categories) && report.categories.some((item) => String(item || "").trim().toLowerCase() === category))
+    : reports.slice();
+
+  filtered.sort((a, b) => {
+    if (sortBy === "name") {
+      const nameA = String(a?.name || "").toLowerCase();
+      const nameB = String(b?.name || "").toLowerCase();
+      const cmp = nameA.localeCompare(nameB, undefined, { sensitivity: "base" });
+      if (cmp !== 0) return cmp * directionFactor;
+    } else {
+      const dateA = Date.parse(a?.created_at || "") || 0;
+      const dateB = Date.parse(b?.created_at || "") || 0;
+      if (dateA !== dateB) return (dateA - dateB) * directionFactor;
+    }
+
+    return (Number(a?.id) - Number(b?.id)) * directionFactor;
+  });
+
+  return filtered;
 }
 __name(corsHeaders, "corsHeaders");
 
