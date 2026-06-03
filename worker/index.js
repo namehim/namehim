@@ -115,7 +115,10 @@ export default {
         return errorResponse("Unable to load stories", 503);
       }
 
-      return new Response(JSON.stringify({ stories: filterStoriesById(stories, storyId) }), {
+      return new Response(JSON.stringify({
+        stories: filterStoriesById(stories, storyId),
+        total: stories.length
+      }), {
         status: 200,
         headers: { "Content-Type": "application/json", ...corsHeaders() }
       });
