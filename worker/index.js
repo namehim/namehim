@@ -6,6 +6,9 @@ var CACHE_KEY = "reports_cache";
 var REFRESH_LOCK_KEY = "reports_refreshing";
 var LAST_SUCCESS_KEY = "reports_last_success";
 var BLOCKED_NAMES_KEY = "blocked_names_cache";
+var STORIES_CACHE_KEY = "stories_cache";
+var STORIES_REFRESH_LOCK_KEY = "stories_refreshing";
+var STORIES_LAST_SUCCESS_KEY = "stories_last_success";
 
 // US state names set – used for counting reports per state
 const US_STATES_SET = new Set([
@@ -50,25 +53,8 @@ export default {
       const sortBy = normalizeSortBy(url.searchParams.get("sortBy"));
       const sortDirection = normalizeSortDirection(url.searchParams.get("sortDirection"));
       const category = normalizeCategoryFilter(url.searchParams.get("category"));
-      const bypassCache = shouldBypassCache(url);
+      const reports = await getReportsForRead(env, ctx, { bypassCache: shouldBypassCache(url) });
 
-      let cached = null;
-      try {
-        if (!bypassCache && env.CACHE_KV) cached = await env.CACHE_KV.get(CACHE_KEY, "json");
-      } catch (e) { console.error("KV read error:", e); }
-      
-      let reports;
-      if (cached && Array.isArray(cached)) {
-        reports = cached;
-        if (ctx && typeof ctx.waitUntil === "function") ctx.waitUntil(refreshIfStale(env));
-      } else {
-        reports = await fetchAllReportsFromD1(env);
-        if (Array.isArray(reports) && env.CACHE_KV) {
-          await env.CACHE_KV.put(CACHE_KEY, JSON.stringify(reports));
-          await env.CACHE_KV.put(LAST_SUCCESS_KEY, Date.now().toString());
-        }
-      }
-      
       if (!reports) {
         return new Response(JSON.stringify({ error: "Service unavailable" }), { status: 503, headers: corsHeaders() });
       }
@@ -94,24 +80,8 @@ export default {
 
     // GET /stats – aggregated counts for maps
     if (request.method === "GET" && url.pathname === "/stats") {
-      const bypassCache = shouldBypassCache(url);
-      let cached = null;
-      try {
-        if (!bypassCache && env.CACHE_KV) cached = await env.CACHE_KV.get(CACHE_KEY, "json");
-      } catch (e) { console.error("KV read error:", e); }
-      
-      let reports;
-      if (cached && Array.isArray(cached)) {
-        reports = cached;
-        if (ctx && typeof ctx.waitUntil === "function") ctx.waitUntil(refreshIfStale(env));
-      } else {
-        reports = await fetchAllReportsFromD1(env);
-        if (Array.isArray(reports) && env.CACHE_KV) {
-          await env.CACHE_KV.put(CACHE_KEY, JSON.stringify(reports));
-          await env.CACHE_KV.put(LAST_SUCCESS_KEY, Date.now().toString());
-        }
-      }
-      
+      const reports = await getReportsForRead(env, ctx, { bypassCache: shouldBypassCache(url) });
+
       if (!reports) {
         return new Response(JSON.stringify({ error: "Service unavailable" }), { status: 503, headers: corsHeaders() });
       }
@@ -139,16 +109,16 @@ export default {
     // GET /stories – approved community stories from D1
     if (request.method === "GET" && url.pathname === "/stories") {
       const storyId = url.searchParams.get("id");
-      try {
-        const stories = await fetchApprovedStoriesFromD1(env, storyId);
-        return new Response(JSON.stringify({ stories }), {
-          status: 200,
-          headers: { "Content-Type": "application/json", ...corsHeaders() }
-        });
-      } catch (err) {
-        console.error("Stories fetch failed:", err);
-        return errorResponse("Unable to load stories", 500);
+      const stories = await getStoriesForRead(env, ctx, { bypassCache: shouldBypassCache(url) });
+
+      if (!stories) {
+        return errorResponse("Unable to load stories", 503);
       }
+
+      return new Response(JSON.stringify({ stories: filterStoriesById(stories, storyId) }), {
+        status: 200,
+        headers: { "Content-Type": "application/json", ...corsHeaders() }
+      });
     }
 
     if (request.method === "POST" && url.pathname === "/submit") {
@@ -163,15 +133,9 @@ export default {
     }
 
     // ----- GET /filtered-reports (full list, legacy) -----
-    const bypassCache = shouldBypassCache(url);
-    let cached = null;
-    try {
-      if (!bypassCache && env.CACHE_KV) cached = await env.CACHE_KV.get(CACHE_KEY, "json");
-    } catch (e) { console.error("KV read error:", e); }
-
-    if (cached && Array.isArray(cached)) {
-      if (ctx && typeof ctx.waitUntil === "function") ctx.waitUntil(refreshIfStale(env));
-      const preparedReports = sortAndFilterReports(cached, {
+    const reports = await getReportsForRead(env, ctx, { bypassCache: shouldBypassCache(url) });
+    if (Array.isArray(reports)) {
+      const preparedReports = sortAndFilterReports(reports, {
         sortBy: url.searchParams.get("sortBy"),
         sortDirection: url.searchParams.get("sortDirection"),
         category: url.searchParams.get("category")
@@ -186,34 +150,10 @@ export default {
       });
     }
 
-    try {
-      const reports = await fetchAllReportsFromD1(env);
-      if (Array.isArray(reports)) {
-        const preparedReports = sortAndFilterReports(reports, {
-          sortBy: url.searchParams.get("sortBy"),
-          sortDirection: url.searchParams.get("sortDirection"),
-          category: url.searchParams.get("category")
-        });
-        if (env.CACHE_KV) {
-          await env.CACHE_KV.put(CACHE_KEY, JSON.stringify(reports));
-          await env.CACHE_KV.put(LAST_SUCCESS_KEY, Date.now().toString());
-        }
-        return new Response(JSON.stringify(preparedReports), {
-          status: 200,
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "https://namehim.app"
-          }
-        });
-      }
-    } catch (err) {
-      console.error("Initial fetch failed:", err);
-    }
-
-      return new Response(JSON.stringify({ error: "Service temporarily unavailable. Please try again in a minute." }), {
-        status: 503,
-        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "https://namehim.app" }
-      });
+    return new Response(JSON.stringify({ error: "Service temporarily unavailable. Please try again in a minute." }), {
+      status: 503,
+      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "https://namehim.app" }
+    });
     } catch (err) {
       console.error("Unhandled worker error:", err);
       return errorResponse("Service unavailable. Please try again in a moment.", 500);
@@ -372,6 +312,15 @@ async function handleSubmitStory(request, env) {
     console.error("Story insert failed:", err);
     return errorResponse("Submission failed", 500);
   }
+
+  try {
+    if (env.CACHE_KV) {
+      await env.CACHE_KV.delete(STORIES_CACHE_KEY);
+      await env.CACHE_KV.delete(STORIES_LAST_SUCCESS_KEY);
+    }
+  } catch (err) {
+    console.error("KV stories invalidation error:", err);
+  }
   return new Response(JSON.stringify({ success: true }), { status: 200, headers: corsHeaders() });
 }
 __name(handleSubmitStory, "handleSubmitStory");
@@ -475,6 +424,57 @@ function sortAndFilterReports(reports, options = {}) {
   return filtered;
 }
 
+async function readCachedReports(env) {
+  try {
+    if (!env.CACHE_KV) return null;
+    const cached = await env.CACHE_KV.get(CACHE_KEY, "json");
+    return Array.isArray(cached) ? cached : null;
+  } catch (err) {
+    console.error("KV read error:", err);
+    return null;
+  }
+}
+__name(readCachedReports, "readCachedReports");
+
+async function writeReportsCache(env, reports) {
+  if (!env.CACHE_KV || !Array.isArray(reports)) return;
+  try {
+    await env.CACHE_KV.put(CACHE_KEY, JSON.stringify(reports));
+    await env.CACHE_KV.put(LAST_SUCCESS_KEY, Date.now().toString());
+  } catch (err) {
+    console.error("KV write error:", err);
+  }
+}
+__name(writeReportsCache, "writeReportsCache");
+
+async function getReportsForRead(env, ctx, options = {}) {
+  const bypassCache = Boolean(options.bypassCache);
+  const cached = await readCachedReports(env);
+
+  if (cached && !bypassCache) {
+    if (ctx && typeof ctx.waitUntil === "function") ctx.waitUntil(refreshIfStale(env));
+    return cached;
+  }
+
+  try {
+    const reports = await fetchAllReportsFromD1(env);
+    if (Array.isArray(reports)) {
+      await writeReportsCache(env, reports);
+      return reports;
+    }
+  } catch (err) {
+    console.error("D1 reports fetch failed:", err);
+  }
+
+  if (cached) {
+    console.warn("Serving stale reports cache after D1 fetch failure.");
+    return cached;
+  }
+
+  return null;
+}
+__name(getReportsForRead, "getReportsForRead");
+
 async function refreshIfStale(env) {
   if (!env.CACHE_KV) return;
   const lastSuccess = await env.CACHE_KV.get(LAST_SUCCESS_KEY);
@@ -496,6 +496,84 @@ async function refreshIfStale(env) {
   }
 }
 __name(refreshIfStale, "refreshIfStale");
+
+async function readCachedStories(env) {
+  try {
+    if (!env.CACHE_KV) return null;
+    const cached = await env.CACHE_KV.get(STORIES_CACHE_KEY, "json");
+    return Array.isArray(cached) ? cached : null;
+  } catch (err) {
+    console.error("KV stories read error:", err);
+    return null;
+  }
+}
+__name(readCachedStories, "readCachedStories");
+
+async function writeStoriesCache(env, stories) {
+  if (!env.CACHE_KV || !Array.isArray(stories)) return;
+  try {
+    await env.CACHE_KV.put(STORIES_CACHE_KEY, JSON.stringify(stories));
+    await env.CACHE_KV.put(STORIES_LAST_SUCCESS_KEY, Date.now().toString());
+  } catch (err) {
+    console.error("KV stories write error:", err);
+  }
+}
+__name(writeStoriesCache, "writeStoriesCache");
+
+async function getStoriesForRead(env, ctx, options = {}) {
+  const bypassCache = Boolean(options.bypassCache);
+  const cached = await readCachedStories(env);
+
+  if (cached && !bypassCache) {
+    if (ctx && typeof ctx.waitUntil === "function") ctx.waitUntil(refreshStoriesIfStale(env));
+    return cached;
+  }
+
+  try {
+    const stories = await fetchApprovedStoriesFromD1(env);
+    if (Array.isArray(stories)) {
+      await writeStoriesCache(env, stories);
+      return stories;
+    }
+  } catch (err) {
+    console.error("D1 stories fetch failed:", err);
+  }
+
+  if (cached) {
+    console.warn("Serving stale stories cache after D1 fetch failure.");
+    return cached;
+  }
+
+  return null;
+}
+__name(getStoriesForRead, "getStoriesForRead");
+
+async function refreshStoriesIfStale(env) {
+  if (!env.CACHE_KV) return;
+  const lastSuccess = await env.CACHE_KV.get(STORIES_LAST_SUCCESS_KEY);
+  const now = Date.now();
+  if (lastSuccess && now - parseInt(lastSuccess) < 300000) return;
+  const lock = await env.CACHE_KV.get(STORIES_REFRESH_LOCK_KEY);
+  if (lock) return;
+  await env.CACHE_KV.put(STORIES_REFRESH_LOCK_KEY, "1", { expirationTtl: 60 });
+  try {
+    const stories = await fetchApprovedStoriesFromD1(env);
+    if (Array.isArray(stories)) {
+      await writeStoriesCache(env, stories);
+    }
+  } catch (err) {
+    console.error("Background stories refresh failed:", err);
+  } finally {
+    await env.CACHE_KV.delete(STORIES_REFRESH_LOCK_KEY);
+  }
+}
+__name(refreshStoriesIfStale, "refreshStoriesIfStale");
+
+function filterStoriesById(stories, storyId) {
+  if (!storyId) return stories;
+  return stories.filter((story) => String(story && story.id) === String(storyId));
+}
+__name(filterStoriesById, "filterStoriesById");
 
 async function getBlockedNamesSet(env) {
   // Try to get from KV cache
