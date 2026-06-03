@@ -716,8 +716,7 @@
 }
     
   </style>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="https://js.hcaptcha.com/1/api.js" async defer></script>
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit&onload=onTurnstileLoad" defer></script>
   <script src="mapdata.js?v=2026-04-24-3"></script>
   <script src="usmap.js?v=2026-04-24-4"></script>
   <script src="wmapdata.js?v=2026-04-25-1"></script>
@@ -1061,18 +1060,8 @@
         </div>
 
           <div class="row">
-            <div
-              id="report-hcaptcha"
-              class="h-captcha"
-              data-sitekey="1aaa310a-1942-4844-b7d6-7832ed34891c"
-              data-theme="dark"
-              data-hcaptcha-type="challenge"
-              data-size="normal"
-              data-callback="onHCaptchaSuccess"
-              data-expired-callback="onHCaptchaExpired"
-              data-error-callback="onHCaptchaError"
-            ></div>
-            <p id="hcaptcha-warning" class="warning hidden">Please complete the CAPTCHA verification.</p>
+            <div id="report-turnstile" class="turnstile-widget" aria-live="polite"></div>
+            <p id="turnstile-warning" class="warning hidden">Please complete the CAPTCHA verification.</p>
           </div>
 
           <p id="rate-warning" class="message error hidden">You have reached the limit of 3 submissions in the last hour. Please try again later.</p>
@@ -1107,16 +1096,7 @@
   </select>
 </div>
     <div class="row">
-      <div
-        id="story-hcaptcha"
-        class="h-captcha"
-        data-sitekey="1aaa310a-1942-4844-b7d6-7832ed34891c"
-        data-theme="dark"
-        data-size="normal"
-        data-callback="onStoryHCaptchaSuccess"
-        data-expired-callback="onStoryHCaptchaExpired"
-        data-error-callback="onStoryHCaptchaError"
-      ></div>
+      <div id="story-turnstile" class="turnstile-widget" aria-live="polite"></div>
       <p id="story-turnstile-warning" class="warning hidden">Please complete the CAPTCHA.</p>
     </div>
     <p id="story-rate-warning" class="message error hidden">You've reached the limit. Please wait before submitting another story.</p>
@@ -1182,8 +1162,8 @@
       'pedo'
     ];
 
-    const SUPABASE_URL = 'https://cmmggaprguusffiphegy.supabase.co';
-    const SUPABASE_ANON_KEY = 'sb_publishable_G9Doh6gciyFVT1NDum55ZA_8ryL3fOw';
+    const API_BASE_URL = 'https://api.namehim.app';
+    const TURNSTILE_SITE_KEY = '0x4AAAAAADCC51BDmfY6JgSc';
     const MAX_BROWSE_FIELD_LENGTH = 30;
     const MAX_COUNTRY_LENGTH = 64;
     const MAX_COMMUNITY_POST_LENGTH = 1000;
@@ -1191,7 +1171,6 @@
     const RATE_LIMIT_STORAGE_KEY = 'submission_timestamps';
     const SUBMITTER_ID_KEY = 'submitter_id';
 
-    const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     const pageBrowse = document.getElementById('page-browse');
     const pageSubmit = document.getElementById('page-submit');
@@ -1207,7 +1186,7 @@
     const reportForm = document.getElementById('report-form');
     const submitBtn = document.getElementById('submit-btn');
     const rateWarning = document.getElementById('rate-warning');
-    const hcaptchaWarning = document.getElementById('hcaptcha-warning');
+    const turnstileWarning = document.getElementById('turnstile-warning');
     const categoryContainer = document.getElementById('category-checkboxes');
     const reportCount = document.getElementById('report-count');
     const countryField = document.getElementById('country');
@@ -1523,7 +1502,7 @@
         return true;
       }
       try {
-        const response = await fetch('https://api.namehim.app/filtered-reports');
+        const response = await fetch(`${API_BASE_URL}/filtered-reports?refresh=1&t=${Date.now()}`);
         if (!response.ok) throw new Error(`Worker returned ${response.status}`);
         const reports = await response.json();
         fullReportsList = sanitizeFetchedReports(reports);
@@ -2406,7 +2385,9 @@ function addStoryTimestamp() {
   if (selectedCategory) {
     params.set('category', selectedCategory);
   }
-  const WORKER_URL = `https://api.namehim.app/reports?${params.toString()}`;
+  params.set('refresh', '1');
+  params.set('t', String(Date.now()));
+  const WORKER_URL = `${API_BASE_URL}/reports?${params.toString()}`;
 
   try {
     const response = await fetch(WORKER_URL);
@@ -2444,7 +2425,7 @@ function addStoryTimestamp() {
 
 // Original full fetch (kept for fallback)
 async function loadReportsFull() {
-  const WORKER_URL = 'https://api.namehim.app/filtered-reports';
+  const WORKER_URL = `${API_BASE_URL}/filtered-reports?refresh=1&t=${Date.now()}`;
   try {
     const response = await fetch(WORKER_URL);
     if (!response.ok) throw new Error(`Worker returned ${response.status}`);
@@ -2472,7 +2453,7 @@ async function loadReportsFull() {
 
 async function loadMapStats() {
   try {
-    const response = await fetch('https://api.namehim.app/stats');
+    const response = await fetch(`${API_BASE_URL}/stats?refresh=1&t=${Date.now()}`);
     if (!response.ok) throw new Error(`Stats endpoint returned ${response.status}`);
     const data = await response.json();
     stateCounts = data && data.stateCounts && typeof data.stateCounts === 'object' ? data.stateCounts : {};
@@ -2594,41 +2575,41 @@ async function loadMapStats() {
     async function loadApprovedStories(options = {}) {
       const storyId = options.storyId || null;
       storiesContainer.innerHTML = '<p>Loading stories...</p>';
-      let query = supabaseClient
-        .from('stories')
-        .select('id, title, content, created_at, category, admin_reply')
-        .eq('is_approved', true);
-      if (storyId) {
-        query = query.eq('id', storyId).limit(1);
-      } else {
-        query = query.order('created_at', { ascending: false });
-      }
-      const { data, error } = await query;
+      const params = new URLSearchParams();
+      if (storyId) params.set('id', storyId);
+      params.set('refresh', '1');
+      params.set('t', String(Date.now()));
+      const storiesUrl = `${API_BASE_URL}/stories?${params.toString()}`;
 
-      if (error) {
+      try {
+        const response = await fetch(storiesUrl);
+        if (!response.ok) throw new Error(`Stories endpoint returned ${response.status}`);
+        const data = await response.json();
+        const stories = data && Array.isArray(data.stories) ? data.stories : [];
+
+        if (!stories.length) {
+          approvedStories = [];
+          storiesContainer.innerHTML = storyId
+            ? '<p>Post not found. <a href="#/community">Back to all approved posts</a>.</p>'
+            : '<p>No approved stories yet. Check back soon.</p>';
+          return;
+        }
+
+        approvedStories = stories;
+        if (!storyId) {
+          applyStoryFilters();
+          return;
+        }
+
+        let html = '';
+        for (const story of stories) {
+          html += getStoryCardMarkup(story);
+        }
+        storiesContainer.innerHTML = html;
+      } catch (error) {
+        console.error('Failed to load stories:', error);
         storiesContainer.innerHTML = '<p>Error loading stories.</p>';
-        return;
       }
-
-      if (!data.length) {
-        approvedStories = [];
-        storiesContainer.innerHTML = storyId
-          ? '<p>Post not found. <a href="#/community">Back to all approved posts</a>.</p>'
-          : '<p>No approved stories yet. Check back soon.</p>';
-        return;
-      }
-
-      approvedStories = data;
-      if (!storyId) {
-        applyStoryFilters();
-        return;
-      }
-
-      let html = '';
-      for (const story of data) {
-        html += getStoryCardMarkup(story);
-      }
-      storiesContainer.innerHTML = html;
     }
 
     function updateCommunityViewFromRoute() {
@@ -2655,48 +2636,144 @@ async function loadMapStats() {
     }
 
 
-    let hcaptchaTokenValue = '';
-    let storyHcaptchaTokenValue = '';
-
-    window.onHCaptchaSuccess = function onHCaptchaSuccess(token) {
-      hcaptchaTokenValue = token || '';
-      if (hcaptchaWarning) hcaptchaWarning.classList.add('hidden');
+    let turnstileTokenValue = '';
+    let storyTurnstileTokenValue = '';
+    let reportTurnstileWidgetId = null;
+    let storyTurnstileWidgetId = null;
+    let turnstileReadyResolve = null;
+    const turnstileReadyPromise = new Promise((resolve) => {
+      turnstileReadyResolve = resolve;
+    });
+    const pendingTurnstileTokens = {
+      report: null,
+      story: null
     };
 
-    window.onHCaptchaExpired = function onHCaptchaExpired() {
-      hcaptchaTokenValue = '';
-    };
-
-    window.onHCaptchaError = function onHCaptchaError() {
-      hcaptchaTokenValue = '';
-    };
-    window.onStoryHCaptchaSuccess = function onStoryHCaptchaSuccess(token) {
-      storyHcaptchaTokenValue = token || '';
-      if (storyTurnstileWarning) storyTurnstileWarning.classList.add('hidden');
-    };
-    window.onStoryHCaptchaExpired = function onStoryHCaptchaExpired() {
-      storyHcaptchaTokenValue = '';
-    };
-    window.onStoryHCaptchaError = function onStoryHCaptchaError() {
-      storyHcaptchaTokenValue = '';
-    };
-
-    function getHCaptchaToken() {
-      if (hcaptchaTokenValue) return hcaptchaTokenValue;
-
-      if (window.hcaptcha && typeof window.hcaptcha.getResponse === 'function') {
-        const token = window.hcaptcha.getResponse();
-        if (token) return token;
+    window.onTurnstileLoad = function onTurnstileLoad() {
+      if (typeof turnstileReadyResolve === 'function') {
+        turnstileReadyResolve();
+        turnstileReadyResolve = null;
       }
+      renderTurnstileWidget('report');
+      if (storyForm && !storyForm.classList.contains('hidden')) {
+        renderTurnstileWidget('story');
+      }
+    };
 
-      const tokenField = document.querySelector('[name="h-captcha-response"]');
-      return tokenField && tokenField.value ? tokenField.value : '';
+    function getTurnstileApi() {
+      return window.turnstile && typeof window.turnstile.render === 'function' ? window.turnstile : null;
     }
 
-    function resetHCaptchaWidget() {
-      hcaptchaTokenValue = '';
-      if (window.hcaptcha && typeof window.hcaptcha.reset === 'function') {
-        window.hcaptcha.reset();
+    async function waitForTurnstileApi() {
+      if (getTurnstileApi()) return window.turnstile;
+      await Promise.race([
+        turnstileReadyPromise,
+        new Promise((_, reject) => window.setTimeout(() => reject(new Error('CAPTCHA failed to load. Please refresh and try again.')), 15000))
+      ]);
+      if (!getTurnstileApi()) {
+        throw new Error('CAPTCHA failed to load. Please refresh and try again.');
+      }
+      return window.turnstile;
+    }
+
+    function renderTurnstileWidget(kind) {
+      const turnstileApi = getTurnstileApi();
+      if (!turnstileApi) return null;
+
+      const isStory = kind === 'story';
+      const container = document.getElementById(isStory ? 'story-turnstile' : 'report-turnstile');
+      if (!container) return null;
+
+      if (isStory && storyTurnstileWidgetId !== null) return storyTurnstileWidgetId;
+      if (!isStory && reportTurnstileWidgetId !== null) return reportTurnstileWidgetId;
+
+      const widgetId = turnstileApi.render(container, {
+        sitekey: TURNSTILE_SITE_KEY,
+        theme: 'dark',
+        size: 'normal',
+        execution: 'execute',
+        appearance: 'execute',
+        callback(token) {
+          if (isStory) {
+            storyTurnstileTokenValue = token || '';
+            if (storyTurnstileWarning) storyTurnstileWarning.classList.add('hidden');
+          } else {
+            turnstileTokenValue = token || '';
+            if (turnstileWarning) turnstileWarning.classList.add('hidden');
+          }
+          const pending = pendingTurnstileTokens[kind];
+          pendingTurnstileTokens[kind] = null;
+          if (pending) pending.resolve(token || '');
+        },
+        'expired-callback'() {
+          if (isStory) storyTurnstileTokenValue = '';
+          else turnstileTokenValue = '';
+        },
+        'error-callback'() {
+          if (isStory) storyTurnstileTokenValue = '';
+          else turnstileTokenValue = '';
+          const pending = pendingTurnstileTokens[kind];
+          pendingTurnstileTokens[kind] = null;
+          if (pending) pending.reject(new Error('CAPTCHA verification failed. Please try again.'));
+        }
+      });
+
+      if (isStory) storyTurnstileWidgetId = widgetId;
+      else reportTurnstileWidgetId = widgetId;
+      return widgetId;
+    }
+
+    async function executeTurnstile(kind) {
+      const turnstileApi = await waitForTurnstileApi();
+      const widgetId = renderTurnstileWidget(kind);
+      if (widgetId === null || widgetId === undefined) {
+        throw new Error('CAPTCHA widget missing. Please refresh and try again.');
+      }
+
+      if (kind === 'story') storyTurnstileTokenValue = '';
+      else turnstileTokenValue = '';
+
+      if (pendingTurnstileTokens[kind]) {
+        pendingTurnstileTokens[kind].reject(new Error('CAPTCHA restarted. Please try again.'));
+      }
+
+      return new Promise((resolve, reject) => {
+        const timeoutId = window.setTimeout(() => {
+          pendingTurnstileTokens[kind] = null;
+          reject(new Error('CAPTCHA timed out. Please try again.'));
+        }, 120000);
+
+        pendingTurnstileTokens[kind] = {
+          resolve(token) {
+            window.clearTimeout(timeoutId);
+            if (token) resolve(token);
+            else reject(new Error('Please complete the CAPTCHA verification.'));
+          },
+          reject(error) {
+            window.clearTimeout(timeoutId);
+            reject(error);
+          }
+        };
+
+        try {
+          turnstileApi.reset(widgetId);
+          turnstileApi.execute(widgetId);
+        } catch (error) {
+          pendingTurnstileTokens[kind] = null;
+          window.clearTimeout(timeoutId);
+          reject(error);
+        }
+      });
+    }
+
+    function resetTurnstileWidget(kind = 'report') {
+      const turnstileApi = getTurnstileApi();
+      const isStory = kind === 'story';
+      if (isStory) storyTurnstileTokenValue = '';
+      else turnstileTokenValue = '';
+      const widgetId = isStory ? storyTurnstileWidgetId : reportTurnstileWidgetId;
+      if (turnstileApi && widgetId !== null && widgetId !== undefined && typeof turnstileApi.reset === 'function') {
+        turnstileApi.reset(widgetId);
       }
     }
 
@@ -2711,10 +2788,8 @@ async function loadMapStats() {
       showStoryFormBtn.classList.add('hidden');
       showStoryFormBtn.setAttribute('aria-expanded', 'true');
 
-      if (!window.hcaptcha || typeof window.hcaptcha.reset !== 'function') return;
-      const storyTokenField = document.querySelector('#story-form [name="h-captcha-response"]');
-      if (!storyTokenField || !storyTokenField.value) return;
-      window.hcaptcha.reset();
+      renderTurnstileWidget('story');
+      resetTurnstileWidget('story');
     }
 
     async function submitStory(event) {
@@ -2743,23 +2818,20 @@ async function loadMapStats() {
       let category = document.getElementById('story-category').value;
       if (!category) category = 'General';
 
-      let token = storyHcaptchaTokenValue || '';
-      const storyTokenField = document.querySelector('#story-form [name="h-captcha-response"]');
-      if (storyTokenField && storyTokenField.value) {
-        token = storyTokenField.value;
-      } else if (window.hcaptcha && typeof window.hcaptcha.getResponse === 'function') {
-        token = window.hcaptcha.getResponse();
-      }
-
-      if (!token) {
+      storySubmitBtn.disabled = true;
+      let token = '';
+      try {
+        token = await executeTurnstile('story');
+      } catch (error) {
         storyTurnstileWarning.classList.remove('hidden');
+        storyMessage.textContent = error.message || 'Please complete the CAPTCHA.';
+        storyMessage.className = 'message error';
+        storySubmitBtn.disabled = false;
         return;
       }
 
-      storySubmitBtn.disabled = true;
-
       try {
-        const response = await fetch('https://api.namehim.app/submit-story', {
+        const response = await fetch(`${API_BASE_URL}/submit-story`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -2767,7 +2839,7 @@ async function loadMapStats() {
             content,
             category,
             submitter_uuid: localStorage.getItem('submitter_id'),
-            hcaptchaToken: token
+            turnstileToken: token
           })
         });
         const result = await response.json();
@@ -2779,8 +2851,7 @@ async function loadMapStats() {
         storyMessage.textContent = 'Thank you. Your story has been submitted for review.';
         storyMessage.className = 'message success';
         storyForm.reset();
-        storyHcaptchaTokenValue = '';
-        if (window.hcaptcha && typeof window.hcaptcha.reset === 'function') window.hcaptcha.reset();
+        resetTurnstileWidget('story');
         if (window.location.hash === '#/community') loadApprovedStories();
       } catch (error) {
         console.error('Story submission error:', error);
@@ -2801,22 +2872,16 @@ async function loadMapStats() {
     submitMessage.textContent = 'Report submitted successfully.';
     submitMessage.className = 'message success';
     reportForm.reset();
-    resetHCaptchaWidget();
+    resetTurnstileWidget('report');
     return;
     }
       submitMessage.textContent = '';
       submitMessage.className = 'message';
-      hcaptchaWarning.classList.add('hidden');
+      turnstileWarning.classList.add('hidden');
 
       if (updateRateLimitUI()) {
         submitMessage.textContent = 'Rate limit reached. Please wait before submitting again.';
         submitMessage.className = 'message error';
-        return;
-      }
-
-      const token = getHCaptchaToken();
-      if (!token) {
-        hcaptchaWarning.classList.remove('hidden');
         return;
       }
 
@@ -2827,7 +2892,7 @@ async function loadMapStats() {
         country: sanitizeReportText(document.getElementById('country').value, MAX_BROWSE_FIELD_LENGTH),
         categories: getSelectedCategories(),
         submitter_uuid: getOrCreateSubmitterId(),
-        hcaptchaToken: token
+        turnstileToken: ''
       };
 
       // Validation (keep your existing checks)
@@ -2874,9 +2939,18 @@ async function loadMapStats() {
       }
 
       submitBtn.disabled = true;
+      try {
+        payload.turnstileToken = await executeTurnstile('report');
+      } catch (error) {
+        turnstileWarning.classList.remove('hidden');
+        submitMessage.textContent = error.message || 'Please complete the CAPTCHA verification.';
+        submitMessage.className = 'message error';
+        submitBtn.disabled = false;
+        return;
+      }
 
       try {
-        const response = await fetch('https://api.namehim.app/submit', {
+        const response = await fetch(`${API_BASE_URL}/submit`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
@@ -2891,14 +2965,14 @@ async function loadMapStats() {
         reportForm.reset();
         renderStateField();
         populateBrowseStateSelect();
-        resetHCaptchaWidget();
+        resetTurnstileWidget('report');
         submitMessage.textContent = 'Report submitted successfully.';
         submitMessage.className = 'message success';
         await loadReports();
         window.location.hash = '#/browse';
       } catch (error) {
         console.error('Submission error:', error);
-        resetHCaptchaWidget();
+        resetTurnstileWidget('report');
         submitMessage.textContent = error.message;
         submitMessage.className = 'message error';
       } finally {
@@ -2938,16 +3012,17 @@ async function loadMapStats() {
     // button.disabled = true;
     //
     // try {
-    //   const { error } = await supabaseClient
-    //     .from('report_flags')
-    //     .insert({
+    //   const response = await fetch(`${API_BASE_URL}/report-flag`, {
+    //     method: 'POST',
+    //     headers: { 'Content-Type': 'application/json' },
+    //     body: JSON.stringify({
     //       report_id: parseInt(reportId, 10),
     //       reason: reason,
     //       flagged_by: submitterId
-    //     });
+    //     })
+    //   });
     //
-    //   if (error) {
-    //     console.error(error);
+    //   if (!response.ok) {
     //     alert('Could not flag entry. Please try again later.');
     //   } else {
     //     alert('Entry #' + reportId + ' has been flagged for review.\nThank you for your report.');
