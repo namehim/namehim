@@ -107,8 +107,11 @@ export default {
     if (request.method === "GET" && url.pathname === "/stories") {
       const storyId = url.searchParams.get("id");
       try {
-        const stories = await fetchApprovedStoriesFromD1(env, storyId);
-        return new Response(JSON.stringify({ stories }), {
+        const [stories, total] = await Promise.all([
+          fetchApprovedStoriesFromD1(env, storyId),
+          countApprovedStoriesFromD1(env)
+        ]);
+        return new Response(JSON.stringify({ stories, total }), {
           status: 200,
           headers: { "Content-Type": "application/json", ...corsHeaders() }
         });
@@ -521,6 +524,27 @@ async function getTableColumns(db, tableName) {
 }
 __name(getTableColumns, "getTableColumns");
 
+function getStoryApprovalFilter(storyColumns) {
+  const approvalColumn = storyColumns.has("is_approved") ? "is_approved" : (storyColumns.has("approved") ? "approved" : null);
+  return approvalColumn
+    ? `(${approvalColumn} = 1 OR ${approvalColumn} = true OR lower(CAST(${approvalColumn} AS TEXT)) = 'true')`
+    : "1 = 1";
+}
+__name(getStoryApprovalFilter, "getStoryApprovalFilter");
+
+async function countApprovedStoriesFromD1(env) {
+  const db = getD1Database(env);
+  const storyColumns = await getTableColumns(db, "stories");
+  if (!storyColumns.size) {
+    throw new Error("stories table is missing or has no columns");
+  }
+  const approvalFilter = getStoryApprovalFilter(storyColumns);
+  const { results } = await db.prepare(`SELECT COUNT(*) AS total FROM stories WHERE ${approvalFilter}`).all();
+  const row = results && results[0] ? results[0] : {};
+  return Number(row.total) || 0;
+}
+__name(countApprovedStoriesFromD1, "countApprovedStoriesFromD1");
+
 async function fetchApprovedStoriesFromD1(env, storyId = null) {
   const db = getD1Database(env);
 
@@ -539,10 +563,7 @@ async function fetchApprovedStoriesFromD1(env, storyId = null) {
     storyColumns.has("category") ? "category" : "'General' AS category",
     storyColumns.has("admin_reply") ? "admin_reply" : "'' AS admin_reply"
   ];
-  const approvalColumn = storyColumns.has("is_approved") ? "is_approved" : (storyColumns.has("approved") ? "approved" : null);
-  const approvalFilter = approvalColumn
-    ? `(${approvalColumn} = 1 OR ${approvalColumn} = true OR lower(CAST(${approvalColumn} AS TEXT)) = 'true')`
-    : "1 = 1";
+  const approvalFilter = getStoryApprovalFilter(storyColumns);
   const orderBy = createdAtColumn ? `${createdAtColumn} DESC` : `${idColumn} DESC`;
 
   const baseSelect = `SELECT ${selectColumns.join(", ")} FROM stories WHERE ${approvalFilter}`;

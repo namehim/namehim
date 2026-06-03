@@ -749,7 +749,7 @@
     <div class="container header-inner">
       <div class="site-title-wrap">
         <h1><a class="site-title-link" href="index.html#/browse">NameHim</a></h1>
-        <p id="report-count" class="report-count">Loading reports and counting...</p>
+        <p id="report-count" class="report-count">Loading number of community posts...</p>
       </div>
       <nav>
         <a href="#/browse" class="nav-link" data-route="#/browse">Browse</a>
@@ -1938,6 +1938,10 @@ async function filterReportsByState(stateFullName) {
     link.classList.toggle('active', link.getAttribute('data-route') === route);
   });
 
+  if (route !== '#/community') {
+    stopCommunityPostCountLoadingAnimation();
+  }
+
   updateBrowseViewFromRoute();
 
   if (route === '#/browse' && !getReportIdFromUrl()) {
@@ -2025,21 +2029,44 @@ function addStoryTimestamp() {
     }
 
     function updateReportCount(total) {
+      if (getCurrentRoute() === '#/community') {
+        return;
+      }
       reportCount.textContent = formatReportTotal(total) + ' reports and counting...';
+    }
+
+    function updateCommunityPostCount(total) {
+      if (getCurrentRoute() !== '#/community') {
+        return;
+      }
+      reportCount.textContent = formatReportTotal(total) + ' community posts shared';
+    }
+
+    function setCommunityPostCountLoadError() {
+      if (getCurrentRoute() !== '#/community') {
+        return;
+      }
+      reportCount.textContent = 'Unable to load community posts.';
     }
 
     const loadingDots = ['.', '..', '...'];
     let loadingDotIndex = 0;
     let reportCountLoadingInterval = null;
+    let communityPostCountLoadingInterval = null;
 
     function startReportCountLoadingAnimation() {
-      if (!reportCount || reportCountLoadingInterval) {
+      if (!reportCount || reportCountLoadingInterval || getCurrentRoute() === '#/community') {
         return;
       }
 
+      stopCommunityPostCountLoadingAnimation();
       reportCount.textContent = 'Loading reports and counting' + loadingDots[loadingDotIndex];
       reportCountLoadingInterval = setInterval(() => {
         loadingDotIndex = (loadingDotIndex + 1) % loadingDots.length;
+        if (getCurrentRoute() === '#/community') {
+          stopReportCountLoadingAnimation();
+          return;
+        }
         reportCount.textContent = 'Loading reports and counting' + loadingDots[loadingDotIndex];
       }, 1000);
     }
@@ -2051,6 +2078,33 @@ function addStoryTimestamp() {
 
       clearInterval(reportCountLoadingInterval);
       reportCountLoadingInterval = null;
+      loadingDotIndex = 0;
+    }
+
+    function startCommunityPostCountLoadingAnimation() {
+      if (!reportCount || communityPostCountLoadingInterval || getCurrentRoute() !== '#/community') {
+        return;
+      }
+
+      stopReportCountLoadingAnimation();
+      reportCount.textContent = 'Loading number of community posts' + loadingDots[loadingDotIndex];
+      communityPostCountLoadingInterval = setInterval(() => {
+        loadingDotIndex = (loadingDotIndex + 1) % loadingDots.length;
+        if (getCurrentRoute() !== '#/community') {
+          stopCommunityPostCountLoadingAnimation();
+          return;
+        }
+        reportCount.textContent = 'Loading number of community posts' + loadingDots[loadingDotIndex];
+      }, 1000);
+    }
+
+    function stopCommunityPostCountLoadingAnimation() {
+      if (!communityPostCountLoadingInterval) {
+        return;
+      }
+
+      clearInterval(communityPostCountLoadingInterval);
+      communityPostCountLoadingInterval = null;
       loadingDotIndex = 0;
     }
 
@@ -2573,6 +2627,7 @@ async function loadMapStats() {
     async function loadApprovedStories(options = {}) {
       const storyId = options.storyId || null;
       storiesContainer.innerHTML = '<p>Loading stories...</p>';
+      startCommunityPostCountLoadingAnimation();
       const params = new URLSearchParams();
       if (storyId) params.set('id', storyId);
       params.set('refresh', '1');
@@ -2584,6 +2639,9 @@ async function loadMapStats() {
         if (!response.ok) throw new Error(`Stories endpoint returned ${response.status}`);
         const data = await response.json();
         const stories = data && Array.isArray(data.stories) ? data.stories : [];
+        const approvedPostTotal = Number.isFinite(Number(data && data.total)) ? Number(data.total) : stories.length;
+        stopCommunityPostCountLoadingAnimation();
+        updateCommunityPostCount(approvedPostTotal);
 
         if (!stories.length) {
           approvedStories = [];
@@ -2606,6 +2664,8 @@ async function loadMapStats() {
         storiesContainer.innerHTML = html;
       } catch (error) {
         console.error('Failed to load stories:', error);
+        stopCommunityPostCountLoadingAnimation();
+        setCommunityPostCountLoadError();
         storiesContainer.innerHTML = '<p>Error loading stories.</p>';
       }
     }
