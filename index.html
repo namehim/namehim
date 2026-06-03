@@ -2575,9 +2575,8 @@ async function loadMapStats() {
       storiesContainer.innerHTML = '<p>Loading stories...</p>';
       const params = new URLSearchParams();
       if (storyId) params.set('id', storyId);
-      params.set('refresh', '1');
-      params.set('t', String(Date.now()));
-      const storiesUrl = `${API_BASE_URL}/stories?${params.toString()}`;
+      const queryString = params.toString();
+      const storiesUrl = queryString ? `${API_BASE_URL}/stories?${queryString}` : `${API_BASE_URL}/stories`;
 
       try {
         const response = await fetch(storiesUrl);
