@@ -20,7 +20,8 @@ const US_STATES_SET = new Set([
 
 export default {
   async fetch(request, env, ctx) {
-    const url = new URL(request.url);
+    try {
+      const url = new URL(request.url);
     
     // CORS preflight
     if (request.method === "OPTIONS") {
@@ -49,10 +50,11 @@ export default {
       const sortBy = normalizeSortBy(url.searchParams.get("sortBy"));
       const sortDirection = normalizeSortDirection(url.searchParams.get("sortDirection"));
       const category = normalizeCategoryFilter(url.searchParams.get("category"));
+      const bypassCache = shouldBypassCache(url);
 
       let cached = null;
       try {
-        if (env.CACHE_KV) cached = await env.CACHE_KV.get(CACHE_KEY, "json");
+        if (!bypassCache && env.CACHE_KV) cached = await env.CACHE_KV.get(CACHE_KEY, "json");
       } catch (e) { console.error("KV read error:", e); }
       
       let reports;
@@ -92,9 +94,10 @@ export default {
 
     // GET /stats – aggregated counts for maps
     if (request.method === "GET" && url.pathname === "/stats") {
+      const bypassCache = shouldBypassCache(url);
       let cached = null;
       try {
-        if (env.CACHE_KV) cached = await env.CACHE_KV.get(CACHE_KEY, "json");
+        if (!bypassCache && env.CACHE_KV) cached = await env.CACHE_KV.get(CACHE_KEY, "json");
       } catch (e) { console.error("KV read error:", e); }
       
       let reports;
@@ -160,9 +163,10 @@ export default {
     }
 
     // ----- GET /filtered-reports (full list, legacy) -----
+    const bypassCache = shouldBypassCache(url);
     let cached = null;
     try {
-      if (env.CACHE_KV) cached = await env.CACHE_KV.get(CACHE_KEY, "json");
+      if (!bypassCache && env.CACHE_KV) cached = await env.CACHE_KV.get(CACHE_KEY, "json");
     } catch (e) { console.error("KV read error:", e); }
 
     if (cached && Array.isArray(cached)) {
@@ -206,10 +210,14 @@ export default {
       console.error("Initial fetch failed:", err);
     }
 
-    return new Response(JSON.stringify({ error: "Service temporarily unavailable. Please try again in a minute." }), {
-      status: 503,
-      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "https://namehim.app" }
-    });
+      return new Response(JSON.stringify({ error: "Service temporarily unavailable. Please try again in a minute." }), {
+        status: 503,
+        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "https://namehim.app" }
+      });
+    } catch (err) {
+      console.error("Unhandled worker error:", err);
+      return errorResponse("Service unavailable. Please try again in a moment.", 500);
+    }
   }
 };
 
@@ -250,7 +258,7 @@ async function handleSubmitReport(request, env) {
   }
 
   const { turnstileToken, ...reportData } = payload;
-  const db = env.DB;
+  const db = getD1Database(env);
   const categoriesJson = JSON.stringify(reportData.categories);
   const insertStmt = await db.prepare(`
     INSERT INTO reports (id, name, city, state, country, categories, created_at, submitter_uuid)
@@ -312,11 +320,30 @@ async function handleSubmitStory(request, env) {
     return errorResponse("Invalid CAPTCHA", 400);
   }
 
-  const db = env.DB;
-  if (!db) throw new Error("D1 binding DB is not configured");
+  const db = getD1Database(env);
   const storyColumns = await getTableColumns(db, "stories");
-  const insertColumns = ["title", "content", "submitter_uuid", "is_approved", "created_at"];
-  const insertValues = [title || null, content, submitter_uuid || null, 0, new Date().toISOString()];
+  const insertColumns = ["content"];
+  const insertValues = [content];
+  if (storyColumns.has("title")) {
+    insertColumns.push("title");
+    insertValues.push(title || null);
+  }
+  if (storyColumns.has("submitter_uuid")) {
+    insertColumns.push("submitter_uuid");
+    insertValues.push(submitter_uuid || null);
+  }
+  if (storyColumns.has("is_approved")) {
+    insertColumns.push("is_approved");
+    insertValues.push(0);
+  }
+  if (storyColumns.has("approved")) {
+    insertColumns.push("approved");
+    insertValues.push(0);
+  }
+  if (storyColumns.has("created_at")) {
+    insertColumns.push("created_at");
+    insertValues.push(new Date().toISOString());
+  }
   if (storyColumns.has("category")) {
     insertColumns.push("category");
     insertValues.push(category || "General");
@@ -337,6 +364,20 @@ async function handleSubmitStory(request, env) {
   return new Response(JSON.stringify({ success: true }), { status: 200, headers: corsHeaders() });
 }
 __name(handleSubmitStory, "handleSubmitStory");
+
+function getD1Database(env) {
+  if (env.DB && typeof env.DB.prepare === "function") return env.DB;
+  if (typeof env.DB === "string") {
+    throw new Error("D1 binding DB is set as a text variable. Configure DB as a Cloudflare D1 binding to nameham-db, not as an environment variable.");
+  }
+  throw new Error("D1 binding DB is not configured. Add a Cloudflare D1 binding named DB for nameham-db.");
+}
+__name(getD1Database, "getD1Database");
+
+function shouldBypassCache(url) {
+  return url.searchParams.has("refresh") || url.searchParams.has("t");
+}
+__name(shouldBypassCache, "shouldBypassCache");
 
 async function verifyTurnstileToken(token, env, ip) {
   if (!env.TURNSTILE_SECRET_KEY) {
@@ -446,9 +487,14 @@ async function getBlockedNamesSet(env) {
   if (blockedSet) return blockedSet;
 
   // Fetch from D1
-  const db = env.DB;
-  if (!db) throw new Error("D1 binding DB is not configured");
-  const { results } = await db.prepare("SELECT name FROM blocked_names").all();
+  const db = getD1Database(env);
+  let results = [];
+  try {
+    ({ results } = await db.prepare("SELECT name FROM blocked_names").all());
+  } catch (err) {
+    console.warn("Blocked names table unavailable; continuing without blocked-name filtering:", err);
+    results = [];
+  }
   const names = (results || []).map(row => String(row.name || "").toLowerCase()).filter(Boolean);
   blockedSet = new Set(names);
   // Cache for 10 minutes (600 seconds)
@@ -466,18 +512,33 @@ async function getTableColumns(db, tableName) {
 __name(getTableColumns, "getTableColumns");
 
 async function fetchApprovedStoriesFromD1(env, storyId = null) {
-  const db = env.DB;
-  if (!db) throw new Error("D1 binding DB is not configured");
+  const db = getD1Database(env);
 
   const storyColumns = await getTableColumns(db, "stories");
-  const selectColumns = ["id", "title", "content", "created_at"];
-  if (storyColumns.has("category")) selectColumns.push("category");
-  if (storyColumns.has("admin_reply")) selectColumns.push("admin_reply");
+  if (!storyColumns.has("content")) {
+    throw new Error("stories table is missing required content column");
+  }
 
-  const baseSelect = `SELECT ${selectColumns.join(", ")} FROM stories WHERE is_approved = 1`;
+  const idColumn = storyColumns.has("id") ? "id" : "rowid";
+  const createdAtColumn = storyColumns.has("created_at") ? "created_at" : null;
+  const selectColumns = [
+    `${idColumn} AS id`,
+    storyColumns.has("title") ? "title" : "NULL AS title",
+    "content",
+    createdAtColumn ? `${createdAtColumn} AS created_at` : "NULL AS created_at",
+    storyColumns.has("category") ? "category" : "'General' AS category",
+    storyColumns.has("admin_reply") ? "admin_reply" : "'' AS admin_reply"
+  ];
+  const approvalColumn = storyColumns.has("is_approved") ? "is_approved" : (storyColumns.has("approved") ? "approved" : null);
+  const approvalFilter = approvalColumn
+    ? `(${approvalColumn} = 1 OR ${approvalColumn} = true OR lower(CAST(${approvalColumn} AS TEXT)) = 'true')`
+    : "1 = 1";
+  const orderBy = createdAtColumn ? `${createdAtColumn} DESC` : `${idColumn} DESC`;
+
+  const baseSelect = `SELECT ${selectColumns.join(", ")} FROM stories WHERE ${approvalFilter}`;
   const stmt = storyId
-    ? db.prepare(`${baseSelect} AND id = ? ORDER BY created_at DESC LIMIT 1`).bind(storyId)
-    : db.prepare(`${baseSelect} ORDER BY created_at DESC`);
+    ? db.prepare(`${baseSelect} AND ${idColumn} = ? ORDER BY ${orderBy} LIMIT 1`).bind(storyId)
+    : db.prepare(`${baseSelect} ORDER BY ${orderBy}`);
   const { results } = await stmt.all();
   return (results || []).map((row) => ({
     id: row.id,
@@ -491,8 +552,7 @@ async function fetchApprovedStoriesFromD1(env, storyId = null) {
 __name(fetchApprovedStoriesFromD1, "fetchApprovedStoriesFromD1");
 
 async function fetchAllReportsFromD1(env) {
-  const db = env.DB;
-  if (!db) throw new Error("D1 binding DB is not configured");
+  const db = getD1Database(env);
   const { results } = await db.prepare("SELECT id, name, city, state, country, categories, created_at, submitter_uuid FROM reports ORDER BY id DESC").all();
   if (!results || !results.length) return [];
 

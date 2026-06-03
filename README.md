@@ -38,7 +38,7 @@ The frontend communicates with a Worker at `https://api.namehim.app/` which prov
 - `POST /submit-story` – submits a community story for review (validates Turnstile, inserts into D1)
 - `GET /version` – returns the current Git commit hash and source link, allowing anyone to verify that the live worker matches the public code.
 
-The worker uses a D1 binding named `DB`, a KV binding named `CACHE_KV`, and the `TURNSTILE_SECRET_KEY` environment variable. The source code is open in /worker/index.js and is automatically deployed from this repository via Cloudflare Workers Git integration (branch: main, root directory: worker/).
+The worker uses a D1 binding named `DB`, a KV binding named `CACHE_KV`, and the `TURNSTILE_SECRET_KEY` environment variable. `DB` must be a Cloudflare D1 binding to `nameham-db` (not a plain text environment variable), otherwise the Worker cannot call D1's `prepare()` API. The source code is open in /worker/index.js and is automatically deployed from this repository via Cloudflare Workers Git integration (branch: main, root directory: worker/).
 Every push to main updates the live worker instantly. Secrets remain in Cloudflare environment variables – never committed.
 
 ---
@@ -85,7 +85,7 @@ CREATE TABLE public.blocked_names (name TEXT PRIMARY KEY);
 Environment variables and bindings
 Frontend (hardcoded in index.html – replace if you fork):
 
-TURNSTILE_SITE_KEY
+TURNSTILE_SITE_KEY (the frontend renders Turnstile explicitly and executes it on each submit)
 
 Worker (set in Cloudflare Dashboard → Worker → Variables / Bindings):
 
