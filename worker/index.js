@@ -122,10 +122,10 @@ export default {
     }
 
     if (request.method === "POST" && url.pathname === "/submit") {
-      return handleSubmitReport(request, env);
+      return await handleSubmitReport(request, env);
     }
     if (request.method === "POST" && url.pathname === "/submit-story") {
-      return handleSubmitStory(request, env);
+      return await handleSubmitStory(request, env);
     }
 
     if (request.method !== "GET" || (url.pathname !== "/filtered-reports" && url.pathname !== "/")) {
@@ -233,9 +233,13 @@ async function handleSubmitReport(request, env) {
     return errorResponse("Submission failed", 500);
   }
 
-  if (env.CACHE_KV) {
-    await env.CACHE_KV.delete(CACHE_KEY);
-    await env.CACHE_KV.delete(LAST_SUCCESS_KEY);
+  try {
+    if (env.CACHE_KV) {
+      await env.CACHE_KV.delete(CACHE_KEY);
+      await env.CACHE_KV.delete(LAST_SUCCESS_KEY);
+    }
+  } catch (err) {
+    console.error("KV reports invalidation error:", err);
   }
   return new Response(JSON.stringify({ success: true }), { status: 200, headers: corsHeaders() });
 }
