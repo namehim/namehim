@@ -2963,7 +2963,9 @@ async function loadMapStats() {
         renderStateField();
         populateBrowseStateSelect();
         resetTurnstileWidget('report');
-        submitMessage.textContent = 'Report submitted successfully.';
+        submitMessage.textContent = result.pending
+          ? 'Report received. It has been saved and will stay visible while the database catches up.'
+          : 'Report submitted successfully.';
         submitMessage.className = 'message success';
         await loadReports();
         window.location.hash = '#/browse';

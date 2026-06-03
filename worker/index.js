@@ -6,6 +6,7 @@ var CACHE_KEY = "reports_cache";
 var REFRESH_LOCK_KEY = "reports_refreshing";
 var LAST_SUCCESS_KEY = "reports_last_success";
 var BLOCKED_NAMES_KEY = "blocked_names_cache";
+var PENDING_REPORTS_KEY = "reports_pending_cache";
 var STORIES_CACHE_KEY = "stories_cache";
 var STORIES_REFRESH_LOCK_KEY = "stories_refreshing";
 var STORIES_LAST_SUCCESS_KEY = "stories_last_success";
@@ -198,39 +199,46 @@ async function handleSubmitReport(request, env) {
   }
 
   const { turnstileToken, ...reportData } = payload;
-  const db = getD1Database(env);
-  const reportColumns = await getTableColumns(db, "reports");
-  const insertColumns = [];
-  const insertValues = [];
 
-  addInsertValue(insertColumns, insertValues, reportColumns, "name", reportData.name);
-  addInsertValue(insertColumns, insertValues, reportColumns, "city", reportData.city);
-  addInsertValue(insertColumns, insertValues, reportColumns, "state", reportData.state || null);
-  addInsertValue(insertColumns, insertValues, reportColumns, "country", reportData.country);
-  if (reportColumns.has("categories")) {
-    addInsertValue(insertColumns, insertValues, reportColumns, "categories", JSON.stringify(reportData.categories));
-  } else if (reportColumns.has("category")) {
-    addInsertValue(insertColumns, insertValues, reportColumns, "category", reportData.categories[0] || null);
-  }
-  addInsertValue(insertColumns, insertValues, reportColumns, "created_at", reportData.created_at || new Date().toISOString());
-  addInsertValue(insertColumns, insertValues, reportColumns, "submitter_uuid", reportData.submitter_uuid || null);
-
-  if (!insertColumns.includes("name")) {
-    return errorResponse("Reports table is missing required name column", 500);
-  }
-
-  const placeholders = insertColumns.map(() => "?").join(", ");
-  const insertStmt = await db.prepare(`
-    INSERT INTO reports (${insertColumns.join(", ")})
-    VALUES (${placeholders})
-  `).bind(...insertValues);
-  
   try {
+    const db = getD1Database(env);
+    const reportColumns = await getTableColumns(db, "reports");
+    const insertColumns = [];
+    const insertValues = [];
+
+    addInsertValue(insertColumns, insertValues, reportColumns, "name", reportData.name);
+    addInsertValue(insertColumns, insertValues, reportColumns, "city", reportData.city);
+    addInsertValue(insertColumns, insertValues, reportColumns, "state", reportData.state || null);
+    addInsertValue(insertColumns, insertValues, reportColumns, "country", reportData.country);
+    if (reportColumns.has("categories")) {
+      addInsertValue(insertColumns, insertValues, reportColumns, "categories", JSON.stringify(reportData.categories));
+    } else if (reportColumns.has("category")) {
+      addInsertValue(insertColumns, insertValues, reportColumns, "category", reportData.categories[0] || null);
+    }
+    addInsertValue(insertColumns, insertValues, reportColumns, "created_at", reportData.created_at || new Date().toISOString());
+    addInsertValue(insertColumns, insertValues, reportColumns, "submitter_uuid", reportData.submitter_uuid || null);
+
+    if (!insertColumns.includes("name")) {
+      throw new Error("Reports table is missing required name column");
+    }
+
+    const placeholders = insertColumns.map(() => "?").join(", ");
+    const insertStmt = await db.prepare(`
+      INSERT INTO reports (${insertColumns.join(", ")})
+      VALUES (${placeholders})
+    `).bind(...insertValues);
     const res = await insertStmt.run();
     if (!res.success) throw new Error("Insert failed");
   } catch (err) {
-    console.error("Report insert failed:", err);
-    return errorResponse("Submission failed", 500);
+    console.error("Report D1 insert failed; storing report in KV fallback:", err);
+    try {
+      const fallbackReport = buildPendingReport(reportData);
+      await appendPendingReport(env, fallbackReport);
+      return new Response(JSON.stringify({ success: true, pending: true }), { status: 200, headers: corsHeaders() });
+    } catch (fallbackErr) {
+      console.error("KV fallback report storage failed:", fallbackErr);
+      return errorResponse("Submission storage is temporarily unavailable. Please try again in a moment.", 503);
+    }
   }
 
   try {
@@ -244,6 +252,22 @@ async function handleSubmitReport(request, env) {
   return new Response(JSON.stringify({ success: true }), { status: 200, headers: corsHeaders() });
 }
 __name(handleSubmitReport, "handleSubmitReport");
+
+function buildPendingReport(reportData) {
+  const now = new Date().toISOString();
+  return {
+    id: Date.now(),
+    name: reportData.name,
+    city: reportData.city,
+    state: reportData.state || null,
+    country: reportData.country,
+    categories: Array.isArray(reportData.categories) ? reportData.categories : [],
+    created_at: reportData.created_at || now,
+    submitter_uuid: reportData.submitter_uuid || null,
+    pending_storage: true
+  };
+}
+__name(buildPendingReport, "buildPendingReport");
 
 async function handleSubmitStory(request, env) {
   // Rate limiting (unchanged)
@@ -451,20 +475,63 @@ async function writeReportsCache(env, reports) {
 }
 __name(writeReportsCache, "writeReportsCache");
 
+async function readPendingReports(env) {
+  try {
+    if (!env.CACHE_KV) return [];
+    const pending = await env.CACHE_KV.get(PENDING_REPORTS_KEY, "json");
+    return Array.isArray(pending) ? pending : [];
+  } catch (err) {
+    console.error("KV pending reports read error:", err);
+    return [];
+  }
+}
+__name(readPendingReports, "readPendingReports");
+
+async function writePendingReports(env, pendingReports) {
+  if (!env.CACHE_KV || !Array.isArray(pendingReports)) return;
+  await env.CACHE_KV.put(PENDING_REPORTS_KEY, JSON.stringify(pendingReports));
+}
+__name(writePendingReports, "writePendingReports");
+
+function mergePendingReports(reports, pendingReports) {
+  const merged = Array.isArray(reports) ? reports.slice() : [];
+  if (!Array.isArray(pendingReports) || !pendingReports.length) return merged;
+  const seenIds = new Set(merged.map((report) => String(report && report.id)));
+  for (const report of pendingReports) {
+    const id = String(report && report.id);
+    if (!id || seenIds.has(id)) continue;
+    seenIds.add(id);
+    merged.unshift(report);
+  }
+  return merged;
+}
+__name(mergePendingReports, "mergePendingReports");
+
+async function appendPendingReport(env, report) {
+  if (!env.CACHE_KV) {
+    throw new Error("CACHE_KV is not configured for fallback report storage.");
+  }
+  const pendingReports = await readPendingReports(env);
+  const nextReports = [report, ...pendingReports].slice(0, 500);
+  await writePendingReports(env, nextReports);
+}
+__name(appendPendingReport, "appendPendingReport");
+
 async function getReportsForRead(env, ctx, options = {}) {
   const bypassCache = Boolean(options.bypassCache);
   const cached = await readCachedReports(env);
+  const pendingReports = await readPendingReports(env);
 
   if (cached && !bypassCache) {
     if (ctx && typeof ctx.waitUntil === "function") ctx.waitUntil(refreshIfStale(env));
-    return cached;
+    return mergePendingReports(cached, pendingReports);
   }
 
   try {
     const reports = await fetchAllReportsFromD1(env);
     if (Array.isArray(reports)) {
       await writeReportsCache(env, reports);
-      return reports;
+      return mergePendingReports(reports, pendingReports);
     }
   } catch (err) {
     console.error("D1 reports fetch failed:", err);
@@ -472,7 +539,12 @@ async function getReportsForRead(env, ctx, options = {}) {
 
   if (cached) {
     console.warn("Serving stale reports cache after D1 fetch failure.");
-    return cached;
+    return mergePendingReports(cached, pendingReports);
+  }
+
+  if (pendingReports.length) {
+    console.warn("Serving pending KV reports because D1 and primary cache are unavailable.");
+    return pendingReports;
   }
 
   return null;
@@ -591,9 +663,9 @@ async function getBlockedNamesSet(env) {
   if (blockedSet) return blockedSet;
 
   // Fetch from D1
-  const db = getD1Database(env);
   let results = [];
   try {
+    const db = getD1Database(env);
     ({ results } = await db.prepare("SELECT name FROM blocked_names").all());
   } catch (err) {
     console.warn("Blocked names table unavailable; continuing without blocked-name filtering:", err);
@@ -609,9 +681,26 @@ async function getBlockedNamesSet(env) {
 }
 __name(getBlockedNamesSet, "getBlockedNamesSet");
 
+function getFallbackTableColumns(tableName) {
+  if (tableName === "reports") {
+    return new Set(["id", "name", "city", "state", "country", "categories", "created_at", "submitter_uuid"]);
+  }
+  if (tableName === "stories") {
+    return new Set(["id", "title", "content", "is_approved", "created_at", "submitter_uuid"]);
+  }
+  return new Set();
+}
+__name(getFallbackTableColumns, "getFallbackTableColumns");
+
 async function getTableColumns(db, tableName) {
-  const { results } = await db.prepare(`PRAGMA table_info(${tableName})`).all();
-  return new Set((results || []).map((column) => column.name));
+  try {
+    const { results } = await db.prepare(`PRAGMA table_info(${tableName})`).all();
+    const columns = new Set((results || []).map((column) => column.name).filter(Boolean));
+    if (columns.size) return columns;
+  } catch (err) {
+    console.error(`Unable to inspect ${tableName} columns; using fallback schema:`, err);
+  }
+  return getFallbackTableColumns(tableName);
 }
 __name(getTableColumns, "getTableColumns");
 
