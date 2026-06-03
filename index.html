@@ -1502,7 +1502,7 @@
         return true;
       }
       try {
-        const response = await fetch(`${API_BASE_URL}/filtered-reports?refresh=1&t=${Date.now()}`);
+        const response = await fetch(`${API_BASE_URL}/filtered-reports`);
         if (!response.ok) throw new Error(`Worker returned ${response.status}`);
         const reports = await response.json();
         fullReportsList = sanitizeFetchedReports(reports);
@@ -2385,8 +2385,6 @@ function addStoryTimestamp() {
   if (selectedCategory) {
     params.set('category', selectedCategory);
   }
-  params.set('refresh', '1');
-  params.set('t', String(Date.now()));
   const WORKER_URL = `${API_BASE_URL}/reports?${params.toString()}`;
 
   try {
@@ -2425,7 +2423,7 @@ function addStoryTimestamp() {
 
 // Original full fetch (kept for fallback)
 async function loadReportsFull() {
-  const WORKER_URL = `${API_BASE_URL}/filtered-reports?refresh=1&t=${Date.now()}`;
+  const WORKER_URL = `${API_BASE_URL}/filtered-reports`;
   try {
     const response = await fetch(WORKER_URL);
     if (!response.ok) throw new Error(`Worker returned ${response.status}`);
@@ -2453,7 +2451,7 @@ async function loadReportsFull() {
 
 async function loadMapStats() {
   try {
-    const response = await fetch(`${API_BASE_URL}/stats?refresh=1&t=${Date.now()}`);
+    const response = await fetch(`${API_BASE_URL}/stats`);
     if (!response.ok) throw new Error(`Stats endpoint returned ${response.status}`);
     const data = await response.json();
     stateCounts = data && data.stateCounts && typeof data.stateCounts === 'object' ? data.stateCounts : {};
