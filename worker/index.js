@@ -259,20 +259,31 @@ async function handleSubmitReport(request, env) {
 
   const { turnstileToken, ...reportData } = payload;
   const db = getD1Database(env);
-  const categoriesJson = JSON.stringify(reportData.categories);
+  const reportColumns = await getTableColumns(db, "reports");
+  const insertColumns = [];
+  const insertValues = [];
+
+  addInsertValue(insertColumns, insertValues, reportColumns, "name", reportData.name);
+  addInsertValue(insertColumns, insertValues, reportColumns, "city", reportData.city);
+  addInsertValue(insertColumns, insertValues, reportColumns, "state", reportData.state || null);
+  addInsertValue(insertColumns, insertValues, reportColumns, "country", reportData.country);
+  if (reportColumns.has("categories")) {
+    addInsertValue(insertColumns, insertValues, reportColumns, "categories", JSON.stringify(reportData.categories));
+  } else if (reportColumns.has("category")) {
+    addInsertValue(insertColumns, insertValues, reportColumns, "category", reportData.categories[0] || null);
+  }
+  addInsertValue(insertColumns, insertValues, reportColumns, "created_at", reportData.created_at || new Date().toISOString());
+  addInsertValue(insertColumns, insertValues, reportColumns, "submitter_uuid", reportData.submitter_uuid || null);
+
+  if (!insertColumns.includes("name")) {
+    return errorResponse("Reports table is missing required name column", 500);
+  }
+
+  const placeholders = insertColumns.map(() => "?").join(", ");
   const insertStmt = await db.prepare(`
-    INSERT INTO reports (id, name, city, state, country, categories, created_at, submitter_uuid)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).bind(
-    reportData.id || null,
-    reportData.name,
-    reportData.city,
-    reportData.state || null,
-    reportData.country,
-    categoriesJson,
-    reportData.created_at || new Date().toISOString(),
-    reportData.submitter_uuid
-  );
+    INSERT INTO reports (${insertColumns.join(", ")})
+    VALUES (${placeholders})
+  `).bind(...insertValues);
   
   try {
     const res = await insertStmt.run();
@@ -367,6 +378,10 @@ __name(handleSubmitStory, "handleSubmitStory");
 
 function getD1Database(env) {
   if (env.DB && typeof env.DB.prepare === "function") return env.DB;
+  if (env["nameham-db"] && typeof env["nameham-db"].prepare === "function") return env["nameham-db"];
+  for (const value of Object.values(env || {})) {
+    if (value && typeof value.prepare === "function") return value;
+  }
   if (typeof env.DB === "string") {
     throw new Error("D1 binding DB is set as a text variable. Configure DB as a Cloudflare D1 binding to nameham-db, not as an environment variable.");
   }
@@ -378,6 +393,13 @@ function shouldBypassCache(url) {
   return url.searchParams.has("refresh") || url.searchParams.has("t");
 }
 __name(shouldBypassCache, "shouldBypassCache");
+
+function addInsertValue(columns, values, availableColumns, column, value) {
+  if (!availableColumns.has(column)) return;
+  columns.push(column);
+  values.push(value);
+}
+__name(addInsertValue, "addInsertValue");
 
 async function verifyTurnstileToken(token, env, ip) {
   if (!env.TURNSTILE_SECRET_KEY) {
@@ -551,9 +573,49 @@ async function fetchApprovedStoriesFromD1(env, storyId = null) {
 }
 __name(fetchApprovedStoriesFromD1, "fetchApprovedStoriesFromD1");
 
+function parseCategoriesValue(value) {
+  if (Array.isArray(value)) return value.map((item) => String(item || "").trim()).filter(Boolean);
+  const raw = String(value || "").trim();
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return parsed.map((item) => String(item || "").trim()).filter(Boolean);
+    if (typeof parsed === "string") return [parsed.trim()].filter(Boolean);
+  } catch (e) {}
+  if (raw.startsWith("{") && raw.endsWith("}")) {
+    return raw.slice(1, -1).split(",").map((item) => item.trim().replace(/^"|"$/g, "")).filter(Boolean);
+  }
+  return raw.split(",").map((item) => item.trim()).filter(Boolean);
+}
+__name(parseCategoriesValue, "parseCategoriesValue");
+
 async function fetchAllReportsFromD1(env) {
   const db = getD1Database(env);
-  const { results } = await db.prepare("SELECT id, name, city, state, country, categories, created_at, submitter_uuid FROM reports ORDER BY id DESC").all();
+  const reportColumns = await getTableColumns(db, "reports");
+  if (!reportColumns.size) {
+    throw new Error("reports table is missing or has no columns");
+  }
+  if (!reportColumns.has("name")) {
+    throw new Error("reports table is missing required name column");
+  }
+
+  const idColumn = reportColumns.has("id") ? "id" : "rowid";
+  const createdAtColumn = reportColumns.has("created_at") ? "created_at" : (reportColumns.has("createdAt") ? "createdAt" : null);
+  const categoriesExpr = reportColumns.has("categories")
+    ? "categories"
+    : (reportColumns.has("category") ? "category AS categories" : "NULL AS categories");
+  const selectColumns = [
+    `${idColumn} AS id`,
+    "name",
+    reportColumns.has("city") ? "city" : "NULL AS city",
+    reportColumns.has("state") ? "state" : "NULL AS state",
+    reportColumns.has("country") ? "country" : "NULL AS country",
+    categoriesExpr,
+    createdAtColumn ? `${createdAtColumn} AS created_at` : "NULL AS created_at",
+    reportColumns.has("submitter_uuid") ? "submitter_uuid" : "NULL AS submitter_uuid"
+  ];
+  const orderBy = createdAtColumn ? `${createdAtColumn} DESC` : `${idColumn} DESC`;
+  const { results } = await db.prepare(`SELECT ${selectColumns.join(", ")} FROM reports ORDER BY ${orderBy}`).all();
   if (!results || !results.length) return [];
 
   // Fetch blocked names
@@ -563,15 +625,13 @@ async function fetchAllReportsFromD1(env) {
   const filtered = [];
   for (const row of results) {
     if (blockedSet.has(String(row.name || "").toLowerCase())) continue;
-    let categories = [];
-    try { categories = JSON.parse(row.categories); } catch(e) { categories = []; }
     filtered.push({
       id: row.id,
       name: row.name,
       city: row.city,
       state: row.state,
       country: row.country,
-      categories: categories,
+      categories: parseCategoriesValue(row.categories),
       created_at: row.created_at,
       submitter_uuid: row.submitter_uuid
     });
