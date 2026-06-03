@@ -5,6 +5,7 @@ var __name = (target, value) => __defProp(target, "name", { value, configurable:
 var CACHE_KEY = "reports_cache";
 var REFRESH_LOCK_KEY = "reports_refreshing";
 var LAST_SUCCESS_KEY = "reports_last_success";
+var BLOCKED_NAMES_KEY = "blocked_names_cache";
 
 // US state names set – used for counting reports per state
 const US_STATES_SET = new Set([
@@ -59,7 +60,7 @@ export default {
         reports = cached;
         ctx.waitUntil(refreshIfStale(env));
       } else {
-        reports = await fetchAllReports(env);
+        reports = await fetchAllReportsFromD1(env);
         if (reports && reports.length && env.CACHE_KV) {
           await env.CACHE_KV.put(CACHE_KEY, JSON.stringify(reports));
           await env.CACHE_KV.put(LAST_SUCCESS_KEY, Date.now().toString());
@@ -89,7 +90,7 @@ export default {
       });
     }
 
-    // 🆕 GET /stats – aggregated counts for maps (fast, uses cached reports)
+    // GET /stats – aggregated counts for maps
     if (request.method === "GET" && url.pathname === "/stats") {
       let cached = null;
       try {
@@ -101,7 +102,7 @@ export default {
         reports = cached;
         ctx.waitUntil(refreshIfStale(env));
       } else {
-        reports = await fetchAllReports(env);
+        reports = await fetchAllReportsFromD1(env);
         if (reports && reports.length && env.CACHE_KV) {
           await env.CACHE_KV.put(CACHE_KEY, JSON.stringify(reports));
           await env.CACHE_KV.put(LAST_SUCCESS_KEY, Date.now().toString());
@@ -112,21 +113,14 @@ export default {
         return new Response(JSON.stringify({ error: "Service unavailable" }), { status: 503, headers: corsHeaders() });
       }
       
-      // Count reports per state (US only) and per country
       const stateCounts = {};
       const countryCounts = {};
       
       for (const r of reports) {
-        // Country counts
         const country = r.country;
-        if (country) {
-          countryCounts[country] = (countryCounts[country] || 0) + 1;
-        }
-        // State counts (only if state is one of the US states)
+        if (country) countryCounts[country] = (countryCounts[country] || 0) + 1;
         const state = r.state;
-        if (state && US_STATES_SET.has(state)) {
-          stateCounts[state] = (stateCounts[state] || 0) + 1;
-        }
+        if (state && US_STATES_SET.has(state)) stateCounts[state] = (stateCounts[state] || 0) + 1;
       }
       
       return new Response(JSON.stringify({
@@ -146,15 +140,11 @@ export default {
       return handleSubmitStory(request, env);
     }
 
-    // ----- GET /filtered-reports (or root)  (full list, legacy) -----
+    // ----- GET /filtered-reports (full list, legacy) -----
     let cached = null;
     try {
-      if (env.CACHE_KV) {
-        cached = await env.CACHE_KV.get(CACHE_KEY, "json");
-      }
-    } catch (e) {
-      console.error("KV read error:", e);
-    }
+      if (env.CACHE_KV) cached = await env.CACHE_KV.get(CACHE_KEY, "json");
+    } catch (e) { console.error("KV read error:", e); }
 
     if (cached && Array.isArray(cached)) {
       ctx.waitUntil(refreshIfStale(env));
@@ -174,7 +164,7 @@ export default {
     }
 
     try {
-      const reports = await fetchAllReports(env);
+      const reports = await fetchAllReportsFromD1(env);
       if (reports && reports.length) {
         const preparedReports = sortAndFilterReports(reports, {
           sortBy: url.searchParams.get("sortBy"),
@@ -205,7 +195,7 @@ export default {
 };
 
 async function handleSubmitReport(request, env) {
-  // ========== RATE LIMITING START ==========
+  // Rate limiting (unchanged)
   const ip = request.headers.get('CF-Connecting-IP');
   const rateLimitOptions = {
     key: `${ip}:submit`,
@@ -217,27 +207,19 @@ async function handleSubmitReport(request, env) {
   };
   try {
     const { success } = await env.RATELIMITER.limit(rateLimitOptions);
-    if (!success) {
-      return errorResponse("Rate limit exceeded. Please wait before trying again.", 429);
-    }
-  } catch (err) {
-    console.error("Rate limiter error:", err);
-    // If rate limiter fails, allow the request (fail open)
-  }
-  // ========== RATE LIMITING END ==========
+    if (!success) return errorResponse("Rate limit exceeded. Please wait before trying again.", 429);
+  } catch (err) { console.error("Rate limiter error:", err); }
 
-  const supabaseUrl = env.SUPABASE_URL;
-  const supabaseKey = env.SUPABASE_SERVICE_ROLE_KEY;
   let payload;
-  try {
-    payload = await request.json();
-  } catch (err) {
-    return errorResponse("Invalid JSON", 400);
-  }
+  try { payload = await request.json(); } catch (err) { return errorResponse("Invalid JSON", 400); }
 
-  if (!payload.name || !payload.city || !payload.country || !payload.categories) {
+  if (!payload.name || !payload.city || !payload.country || !payload.categories)
     return errorResponse("Missing required fields", 400);
-  }
+
+  // 🔒 Check blocked names
+  const blockedSet = await getBlockedNamesSet(env);
+  if (blockedSet.has(payload.name.toLowerCase()))
+    return errorResponse("The name you entered is not allowed for submission.", 400);
 
   const token = payload.hcaptchaToken;
   if (!token) return errorResponse("CAPTCHA token missing", 400);
@@ -254,27 +236,33 @@ async function handleSubmitReport(request, env) {
   const verifyData = await verifyRes.json();
   if (!verifyData.success) {
     const errorCodes = Array.isArray(verifyData["error-codes"]) ? verifyData["error-codes"].join(", ") : "unknown";
-    console.error("hCaptcha verify failed (/submit):", errorCodes, verifyData);
+    console.error("hCaptcha verify failed (/submit):", errorCodes);
     return errorResponse(`Invalid CAPTCHA (${errorCodes})`, 400);
   }
 
   const { hcaptchaToken, ...reportData } = payload;
-  const insertRes = await supabaseFetch(supabaseUrl, supabaseKey, "/rest/v1/reports", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(reportData)
-  });
-  if (!insertRes.ok) {
-    const errorBody = await insertRes.text();
-    console.error("Report insert failed:", insertRes.status, errorBody);
-    let readableError = "Submission failed";
-    try {
-      const parsed = JSON.parse(errorBody);
-      readableError = parsed.message || parsed.error_description || parsed.hint || parsed.details || parsed.error || readableError;
-    } catch (parseError) {
-      if (errorBody) readableError = errorBody;
-    }
-    return errorResponse(readableError, insertRes.status >= 400 && insertRes.status < 600 ? insertRes.status : 500);
+  const db = env.DB;
+  const categoriesJson = JSON.stringify(reportData.categories);
+  const insertStmt = await db.prepare(`
+    INSERT INTO reports (id, name, city, state, country, categories, created_at, submitter_uuid)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(
+    reportData.id || null,
+    reportData.name,
+    reportData.city,
+    reportData.state || null,
+    reportData.country,
+    categoriesJson,
+    reportData.created_at || new Date().toISOString(),
+    reportData.submitter_uuid
+  );
+  
+  try {
+    const res = await insertStmt.run();
+    if (!res.success) throw new Error("Insert failed");
+  } catch (err) {
+    console.error("Report insert failed:", err);
+    return errorResponse("Submission failed", 500);
   }
 
   if (env.CACHE_KV) {
@@ -286,7 +274,7 @@ async function handleSubmitReport(request, env) {
 __name(handleSubmitReport, "handleSubmitReport");
 
 async function handleSubmitStory(request, env) {
-  // ========== RATE LIMITING START ==========
+  // Rate limiting (unchanged)
   const ip = request.headers.get('CF-Connecting-IP');
   const rateLimitOptions = {
     key: `${ip}:story`,
@@ -298,28 +286,14 @@ async function handleSubmitStory(request, env) {
   };
   try {
     const { success } = await env.RATELIMITER.limit(rateLimitOptions);
-    if (!success) {
-      return errorResponse("Rate limit exceeded. Please wait before trying again.", 429);
-    }
-  } catch (err) {
-    console.error("Rate limiter error:", err);
-    // If rate limiter fails, allow the request (fail open)
-  }
-  // ========== RATE LIMITING END ==========
+    if (!success) return errorResponse("Rate limit exceeded. Please wait before trying again.", 429);
+  } catch (err) { console.error("Rate limiter error:", err); }
 
-  const supabaseUrl = env.SUPABASE_URL;
-  const supabaseKey = env.SUPABASE_SERVICE_ROLE_KEY;
   let payload;
-  try {
-    payload = await request.json();
-  } catch (err) {
-    return errorResponse("Invalid JSON", 400);
-  }
+  try { payload = await request.json(); } catch (err) { return errorResponse("Invalid JSON", 400); }
 
   const { title, content, submitter_uuid, hcaptchaToken } = payload;
-  if (!content || typeof content !== "string") {
-    return errorResponse("Missing story content", 400);
-  }
+  if (!content || typeof content !== "string") return errorResponse("Missing story content", 400);
   if (content.length > 1000) return errorResponse("Story too long", 400);
   if (!hcaptchaToken) return errorResponse("CAPTCHA token missing", 400);
 
@@ -335,31 +309,29 @@ async function handleSubmitStory(request, env) {
   const verifyData = await verifyRes.json();
   if (!verifyData.success) {
     const errorCodes = Array.isArray(verifyData["error-codes"]) ? verifyData["error-codes"].join(", ") : "unknown";
-    console.error("hCaptcha verify failed (/submit-story):", errorCodes, verifyData);
+    console.error("hCaptcha verify failed (/submit-story):", errorCodes);
     return errorResponse(`Invalid CAPTCHA (${errorCodes})`, 400);
   }
 
-  const insertRes = await supabaseFetch(supabaseUrl, supabaseKey, "/rest/v1/stories", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      title: title || null,
-      content,
-      submitter_uuid: submitter_uuid || null,
-      is_approved: false
-    })
-  });
-  if (!insertRes.ok) {
-    const errorBody = await insertRes.text();
-    console.error("Story insert failed:", insertRes.status, errorBody);
-    let readableError = "Submission failed";
-    try {
-      const parsed = JSON.parse(errorBody);
-      readableError = parsed.message || parsed.error_description || parsed.hint || parsed.details || parsed.error || readableError;
-    } catch (parseError) {
-      if (errorBody) readableError = errorBody;
-    }
-    return errorResponse(readableError, insertRes.status >= 400 && insertRes.status < 600 ? insertRes.status : 500);
+  const db = env.DB;
+  const insertStmt = await db.prepare(`
+    INSERT INTO stories (title, content, submitter_uuid, is_approved, created_at, category)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).bind(
+    title || null,
+    content,
+    submitter_uuid || null,
+    0,
+    new Date().toISOString(),
+    "General"
+  );
+  
+  try {
+    const res = await insertStmt.run();
+    if (!res.success) throw new Error("Insert failed");
+  } catch (err) {
+    console.error("Story insert failed:", err);
+    return errorResponse("Submission failed", 500);
   }
   return new Response(JSON.stringify({ success: true }), { status: 200, headers: corsHeaders() });
 }
@@ -372,20 +344,22 @@ function corsHeaders() {
   };
 }
 
+function errorResponse(message, status) {
+  return new Response(JSON.stringify({ error: message }), { status, headers: corsHeaders() });
+}
+__name(errorResponse, "errorResponse");
+
 function normalizeSortBy(value) {
   const sortBy = String(value || "").trim().toLowerCase();
   return sortBy === "name" ? "name" : "created_at";
 }
-
 function normalizeSortDirection(value) {
   const direction = String(value || "").trim().toLowerCase();
   return direction === "asc" ? "asc" : "desc";
 }
-
 function normalizeCategoryFilter(value) {
   return String(value || "").trim().toLowerCase();
 }
-
 function sortAndFilterReports(reports, options = {}) {
   const sortBy = normalizeSortBy(options.sortBy);
   const sortDirection = normalizeSortDirection(options.sortDirection);
@@ -407,30 +381,22 @@ function sortAndFilterReports(reports, options = {}) {
       const dateB = Date.parse(b?.created_at || "") || 0;
       if (dateA !== dateB) return (dateA - dateB) * directionFactor;
     }
-
     return (Number(a?.id) - Number(b?.id)) * directionFactor;
   });
 
   return filtered;
 }
-__name(corsHeaders, "corsHeaders");
-
-function errorResponse(message, status) {
-  return new Response(JSON.stringify({ error: message }), { status, headers: corsHeaders() });
-}
-__name(errorResponse, "errorResponse");
 
 async function refreshIfStale(env) {
   if (!env.CACHE_KV) return;
   const lastSuccess = await env.CACHE_KV.get(LAST_SUCCESS_KEY);
   const now = Date.now();
-  if (lastSuccess && now - parseInt(lastSuccess) < 300000) return; // 5 min
-
+  if (lastSuccess && now - parseInt(lastSuccess) < 300000) return;
   const lock = await env.CACHE_KV.get(REFRESH_LOCK_KEY);
   if (lock) return;
   await env.CACHE_KV.put(REFRESH_LOCK_KEY, "1", { expirationTtl: 60 });
   try {
-    const reports = await fetchAllReports(env);
+    const reports = await fetchAllReportsFromD1(env);
     if (reports && reports.length) {
       await env.CACHE_KV.put(CACHE_KEY, JSON.stringify(reports));
       await env.CACHE_KV.put(LAST_SUCCESS_KEY, now.toString());
@@ -443,80 +409,53 @@ async function refreshIfStale(env) {
 }
 __name(refreshIfStale, "refreshIfStale");
 
-async function supabaseFetch(supabaseUrl, supabaseKey, relativeUrl, options = {}) {
-  const fullUrl = `${supabaseUrl}${relativeUrl}`;
-  const fetchOptions = {
-    ...options,
-    headers: {
-      "apikey": supabaseKey,
-      "Authorization": `Bearer ${supabaseKey}`,
-      ...options.headers
-    },
-    cf: { resolveOverride: "cmmggaprguusffiphegy.supabase.co" }
-  };
-  return fetch(fullUrl, fetchOptions);
+async function getBlockedNamesSet(env) {
+  // Try to get from KV cache
+  let blockedSet = null;
+  try {
+    const cached = await env.CACHE_KV.get(BLOCKED_NAMES_KEY);
+    if (cached) blockedSet = new Set(JSON.parse(cached));
+  } catch (e) { console.error("KV blocked names read error:", e); }
+  if (blockedSet) return blockedSet;
+
+  // Fetch from D1
+  const db = env.DB;
+  const { results } = await db.prepare("SELECT name FROM blocked_names").all();
+  const names = results.map(row => row.name.toLowerCase());
+  blockedSet = new Set(names);
+  // Cache for 10 minutes (600 seconds)
+  try {
+    await env.CACHE_KV.put(BLOCKED_NAMES_KEY, JSON.stringify(Array.from(blockedSet)), { expirationTtl: 600 });
+  } catch (e) { console.error("KV blocked names write error:", e); }
+  return blockedSet;
 }
-__name(supabaseFetch, "supabaseFetch");
+__name(getBlockedNamesSet, "getBlockedNamesSet");
 
-async function fetchAllReports(env) {
-  const supabaseUrl = env.SUPABASE_URL;
-  const supabaseKey = env.SUPABASE_SERVICE_ROLE_KEY;
-  const batchSize = 1000;
-  let allReports = [];
-  let offset = 0;
-  let attempts = 0;
-  const MAX_ATTEMPTS = 2;
-  const TIMEOUT_MS = 60000;
+async function fetchAllReportsFromD1(env) {
+  const db = env.DB;
+  const { results } = await db.prepare("SELECT id, name, city, state, country, categories, created_at, submitter_uuid FROM reports ORDER BY id DESC").all();
+  if (!results || !results.length) return [];
 
-  const blockRes = await supabaseFetch(supabaseUrl, supabaseKey, "/rest/v1/blocked_names?select=name");
-  let blockedSet = new Set();
-  if (blockRes.ok) {
-    const blockedNames = await blockRes.json();
-    blockedSet = new Set(blockedNames.map(b => b.name.toLowerCase()));
-  } else {
-    console.error("Failed to fetch blocklist");
+  // Fetch blocked names
+  const blockedSet = await getBlockedNamesSet(env);
+  
+  // Filter reports and parse categories
+  const filtered = [];
+  for (const row of results) {
+    if (blockedSet.has(row.name.toLowerCase())) continue;
+    let categories = [];
+    try { categories = JSON.parse(row.categories); } catch(e) { categories = []; }
+    filtered.push({
+      id: row.id,
+      name: row.name,
+      city: row.city,
+      state: row.state,
+      country: row.country,
+      categories: categories,
+      created_at: row.created_at,
+      submitter_uuid: row.submitter_uuid
+    });
   }
-
-  while (true) {
-    const url = `${supabaseUrl}/rest/v1/reports?select=id,name,city,state,country,categories,created_at&order=created_at.desc&limit=${batchSize}&offset=${offset}`;
-    let batch = null;
-    let success = false;
-    for (let i = 0; i < MAX_ATTEMPTS; i++) {
-      try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
-        const res = await fetch(url, {
-          headers: { "apikey": supabaseKey, "Authorization": `Bearer ${supabaseKey}` },
-          signal: controller.signal,
-          cf: { resolveOverride: "cmmggaprguusffiphegy.supabase.co" }
-        });
-        clearTimeout(timeout);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        batch = await res.json();
-        success = true;
-        break;
-      } catch (err) {
-        console.error(`Batch offset ${offset} attempt ${i+1} failed:`, err);
-        if (i === MAX_ATTEMPTS - 1) return null;
-        await new Promise(r => setTimeout(r, 2000));
-      }
-    }
-    if (!success || !batch.length) break;
-
-    const isCleanReport = (r) => {
-      if (blockedSet.has(r.name.toLowerCase())) return false;
-      const cats = r.categories || [];
-      if (!Array.isArray(cats) || cats.length > 8) return false;
-      if (cats.some(c => typeof c !== "string" || c.length > 100 || /[<>]|javascript:/i.test(c))) return false;
-      if (JSON.stringify(r).length > 5000) return false;
-      return true;
-    };
-    const cleanedBatch = batch.filter(isCleanReport);
-    allReports = allReports.concat(cleanedBatch);
-
-    if (batch.length < batchSize) break;
-    offset += batchSize;
-  }
-  return allReports;
+  return filtered;
 }
-__name(fetchAllReports, "fetchAllReports");
+__name(fetchAllReportsFromD1, "fetchAllReportsFromD1");
