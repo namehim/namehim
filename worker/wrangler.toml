@@ -14,9 +14,10 @@ simple = { limit = 3, period = 60 }
 
 
 # D1 database binding required by worker/index.js (env.DB).
-# The database_id is account-specific; if this binding is not already configured
-# in the Cloudflare dashboard, uncomment this block and fill in the D1 UUID.
-# [[d1_databases]]
-# binding = "DB"
-# database_name = "nameham-db"
-# database_id = "<your-d1-database-uuid>"
+# Keep this binding in source control so Cloudflare's Git deployments do not
+# replace the dashboard binding on every push. In the Cloudflare dashboard this
+# is the D1 binding named DB with value namehim-db.
+[[d1_databases]]
+binding = "DB"
+database_name = "namehim-db"
+database_id = "namehim-db"

@@ -334,14 +334,14 @@ __name(handleSubmitStory, "handleSubmitStory");
 
 function getD1Database(env) {
   if (env.DB && typeof env.DB.prepare === "function") return env.DB;
-  if (env["nameham-db"] && typeof env["nameham-db"].prepare === "function") return env["nameham-db"];
+  if (env["namehim-db"] && typeof env["namehim-db"].prepare === "function") return env["namehim-db"];
   for (const value of Object.values(env || {})) {
     if (value && typeof value.prepare === "function") return value;
   }
   if (typeof env.DB === "string") {
-    throw new Error("D1 binding DB is set as a text variable. Configure DB as a Cloudflare D1 binding to nameham-db, not as an environment variable.");
+    throw new Error("D1 binding DB is set as a text variable. Configure DB as a Cloudflare D1 binding to namehim-db, not as an environment variable.");
   }
-  throw new Error("D1 binding DB is not configured. Add a Cloudflare D1 binding named DB for nameham-db.");
+  throw new Error("D1 binding DB is not configured. Add a Cloudflare D1 binding named DB for namehim-db.");
 }
 __name(getD1Database, "getD1Database");
 
