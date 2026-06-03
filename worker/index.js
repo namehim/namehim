@@ -20,7 +20,8 @@ const US_STATES_SET = new Set([
 
 export default {
   async fetch(request, env, ctx) {
-    const url = new URL(request.url);
+    try {
+      const url = new URL(request.url);
     
     // CORS preflight
     if (request.method === "OPTIONS") {
@@ -49,19 +50,20 @@ export default {
       const sortBy = normalizeSortBy(url.searchParams.get("sortBy"));
       const sortDirection = normalizeSortDirection(url.searchParams.get("sortDirection"));
       const category = normalizeCategoryFilter(url.searchParams.get("category"));
+      const bypassCache = shouldBypassCache(url);
 
       let cached = null;
       try {
-        if (env.CACHE_KV) cached = await env.CACHE_KV.get(CACHE_KEY, "json");
+        if (!bypassCache && env.CACHE_KV) cached = await env.CACHE_KV.get(CACHE_KEY, "json");
       } catch (e) { console.error("KV read error:", e); }
       
       let reports;
       if (cached && Array.isArray(cached)) {
         reports = cached;
-        ctx.waitUntil(refreshIfStale(env));
+        if (ctx && typeof ctx.waitUntil === "function") ctx.waitUntil(refreshIfStale(env));
       } else {
         reports = await fetchAllReportsFromD1(env);
-        if (reports && reports.length && env.CACHE_KV) {
+        if (Array.isArray(reports) && env.CACHE_KV) {
           await env.CACHE_KV.put(CACHE_KEY, JSON.stringify(reports));
           await env.CACHE_KV.put(LAST_SUCCESS_KEY, Date.now().toString());
         }
@@ -92,18 +94,19 @@ export default {
 
     // GET /stats – aggregated counts for maps
     if (request.method === "GET" && url.pathname === "/stats") {
+      const bypassCache = shouldBypassCache(url);
       let cached = null;
       try {
-        if (env.CACHE_KV) cached = await env.CACHE_KV.get(CACHE_KEY, "json");
+        if (!bypassCache && env.CACHE_KV) cached = await env.CACHE_KV.get(CACHE_KEY, "json");
       } catch (e) { console.error("KV read error:", e); }
       
       let reports;
       if (cached && Array.isArray(cached)) {
         reports = cached;
-        ctx.waitUntil(refreshIfStale(env));
+        if (ctx && typeof ctx.waitUntil === "function") ctx.waitUntil(refreshIfStale(env));
       } else {
         reports = await fetchAllReportsFromD1(env);
-        if (reports && reports.length && env.CACHE_KV) {
+        if (Array.isArray(reports) && env.CACHE_KV) {
           await env.CACHE_KV.put(CACHE_KEY, JSON.stringify(reports));
           await env.CACHE_KV.put(LAST_SUCCESS_KEY, Date.now().toString());
         }
@@ -133,6 +136,21 @@ export default {
       });
     }
 
+    // GET /stories – approved community stories from D1
+    if (request.method === "GET" && url.pathname === "/stories") {
+      const storyId = url.searchParams.get("id");
+      try {
+        const stories = await fetchApprovedStoriesFromD1(env, storyId);
+        return new Response(JSON.stringify({ stories }), {
+          status: 200,
+          headers: { "Content-Type": "application/json", ...corsHeaders() }
+        });
+      } catch (err) {
+        console.error("Stories fetch failed:", err);
+        return errorResponse("Unable to load stories", 500);
+      }
+    }
+
     if (request.method === "POST" && url.pathname === "/submit") {
       return handleSubmitReport(request, env);
     }
@@ -140,14 +158,19 @@ export default {
       return handleSubmitStory(request, env);
     }
 
+    if (request.method !== "GET" || (url.pathname !== "/filtered-reports" && url.pathname !== "/")) {
+      return new Response(JSON.stringify({ error: "Not found" }), { status: 404, headers: corsHeaders() });
+    }
+
     // ----- GET /filtered-reports (full list, legacy) -----
+    const bypassCache = shouldBypassCache(url);
     let cached = null;
     try {
-      if (env.CACHE_KV) cached = await env.CACHE_KV.get(CACHE_KEY, "json");
+      if (!bypassCache && env.CACHE_KV) cached = await env.CACHE_KV.get(CACHE_KEY, "json");
     } catch (e) { console.error("KV read error:", e); }
 
     if (cached && Array.isArray(cached)) {
-      ctx.waitUntil(refreshIfStale(env));
+      if (ctx && typeof ctx.waitUntil === "function") ctx.waitUntil(refreshIfStale(env));
       const preparedReports = sortAndFilterReports(cached, {
         sortBy: url.searchParams.get("sortBy"),
         sortDirection: url.searchParams.get("sortDirection"),
@@ -165,7 +188,7 @@ export default {
 
     try {
       const reports = await fetchAllReportsFromD1(env);
-      if (reports && reports.length) {
+      if (Array.isArray(reports)) {
         const preparedReports = sortAndFilterReports(reports, {
           sortBy: url.searchParams.get("sortBy"),
           sortDirection: url.searchParams.get("sortDirection"),
@@ -187,10 +210,14 @@ export default {
       console.error("Initial fetch failed:", err);
     }
 
-    return new Response(JSON.stringify({ error: "Service temporarily unavailable. Please try again in a minute." }), {
-      status: 503,
-      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "https://namehim.app" }
-    });
+      return new Response(JSON.stringify({ error: "Service temporarily unavailable. Please try again in a minute." }), {
+        status: 503,
+        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "https://namehim.app" }
+      });
+    } catch (err) {
+      console.error("Unhandled worker error:", err);
+      return errorResponse("Service unavailable. Please try again in a moment.", 500);
+    }
   }
 };
 
@@ -221,41 +248,42 @@ async function handleSubmitReport(request, env) {
   if (blockedSet.has(payload.name.toLowerCase()))
     return errorResponse("The name you entered is not allowed for submission.", 400);
 
-  const token = payload.hcaptchaToken;
+  const token = payload.turnstileToken;
   if (!token) return errorResponse("CAPTCHA token missing", 400);
 
-  const verifyRes = await fetch("https://api.hcaptcha.com/siteverify", {
-    method: "POST",
-    body: new URLSearchParams({
-      secret: env.HCAPTCHA_SECRET,
-      response: token,
-      remoteip: ip || ""
-    }),
-    headers: { "Content-Type": "application/x-www-form-urlencoded" }
-  });
-  const verifyData = await verifyRes.json();
-  if (!verifyData.success) {
-    const errorCodes = Array.isArray(verifyData["error-codes"]) ? verifyData["error-codes"].join(", ") : "unknown";
-    console.error("hCaptcha verify failed (/submit):", errorCodes);
-    return errorResponse(`Invalid CAPTCHA (${errorCodes})`, 400);
+  const verifyResult = await verifyTurnstileToken(token, env, ip);
+  if (!verifyResult.success) {
+    console.error("Turnstile verify failed (/submit):", verifyResult.errorCodes);
+    return errorResponse("Invalid CAPTCHA", 400);
   }
 
-  const { hcaptchaToken, ...reportData } = payload;
-  const db = env.DB;
-  const categoriesJson = JSON.stringify(reportData.categories);
+  const { turnstileToken, ...reportData } = payload;
+  const db = getD1Database(env);
+  const reportColumns = await getTableColumns(db, "reports");
+  const insertColumns = [];
+  const insertValues = [];
+
+  addInsertValue(insertColumns, insertValues, reportColumns, "name", reportData.name);
+  addInsertValue(insertColumns, insertValues, reportColumns, "city", reportData.city);
+  addInsertValue(insertColumns, insertValues, reportColumns, "state", reportData.state || null);
+  addInsertValue(insertColumns, insertValues, reportColumns, "country", reportData.country);
+  if (reportColumns.has("categories")) {
+    addInsertValue(insertColumns, insertValues, reportColumns, "categories", JSON.stringify(reportData.categories));
+  } else if (reportColumns.has("category")) {
+    addInsertValue(insertColumns, insertValues, reportColumns, "category", reportData.categories[0] || null);
+  }
+  addInsertValue(insertColumns, insertValues, reportColumns, "created_at", reportData.created_at || new Date().toISOString());
+  addInsertValue(insertColumns, insertValues, reportColumns, "submitter_uuid", reportData.submitter_uuid || null);
+
+  if (!insertColumns.includes("name")) {
+    return errorResponse("Reports table is missing required name column", 500);
+  }
+
+  const placeholders = insertColumns.map(() => "?").join(", ");
   const insertStmt = await db.prepare(`
-    INSERT INTO reports (id, name, city, state, country, categories, created_at, submitter_uuid)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).bind(
-    reportData.id || null,
-    reportData.name,
-    reportData.city,
-    reportData.state || null,
-    reportData.country,
-    categoriesJson,
-    reportData.created_at || new Date().toISOString(),
-    reportData.submitter_uuid
-  );
+    INSERT INTO reports (${insertColumns.join(", ")})
+    VALUES (${placeholders})
+  `).bind(...insertValues);
   
   try {
     const res = await insertStmt.run();
@@ -292,39 +320,50 @@ async function handleSubmitStory(request, env) {
   let payload;
   try { payload = await request.json(); } catch (err) { return errorResponse("Invalid JSON", 400); }
 
-  const { title, content, submitter_uuid, hcaptchaToken } = payload;
+  const { title, content, category, submitter_uuid, turnstileToken } = payload;
   if (!content || typeof content !== "string") return errorResponse("Missing story content", 400);
   if (content.length > 1000) return errorResponse("Story too long", 400);
-  if (!hcaptchaToken) return errorResponse("CAPTCHA token missing", 400);
+  if (!turnstileToken) return errorResponse("CAPTCHA token missing", 400);
 
-  const verifyRes = await fetch("https://api.hcaptcha.com/siteverify", {
-    method: "POST",
-    body: new URLSearchParams({
-      secret: env.HCAPTCHA_SECRET,
-      response: hcaptchaToken,
-      remoteip: ip || ""
-    }),
-    headers: { "Content-Type": "application/x-www-form-urlencoded" }
-  });
-  const verifyData = await verifyRes.json();
-  if (!verifyData.success) {
-    const errorCodes = Array.isArray(verifyData["error-codes"]) ? verifyData["error-codes"].join(", ") : "unknown";
-    console.error("hCaptcha verify failed (/submit-story):", errorCodes);
-    return errorResponse(`Invalid CAPTCHA (${errorCodes})`, 400);
+  const verifyResult = await verifyTurnstileToken(turnstileToken, env, ip);
+  if (!verifyResult.success) {
+    console.error("Turnstile verify failed (/submit-story):", verifyResult.errorCodes);
+    return errorResponse("Invalid CAPTCHA", 400);
   }
 
-  const db = env.DB;
+  const db = getD1Database(env);
+  const storyColumns = await getTableColumns(db, "stories");
+  const insertColumns = ["content"];
+  const insertValues = [content];
+  if (storyColumns.has("title")) {
+    insertColumns.push("title");
+    insertValues.push(title || null);
+  }
+  if (storyColumns.has("submitter_uuid")) {
+    insertColumns.push("submitter_uuid");
+    insertValues.push(submitter_uuid || null);
+  }
+  if (storyColumns.has("is_approved")) {
+    insertColumns.push("is_approved");
+    insertValues.push(0);
+  }
+  if (storyColumns.has("approved")) {
+    insertColumns.push("approved");
+    insertValues.push(0);
+  }
+  if (storyColumns.has("created_at")) {
+    insertColumns.push("created_at");
+    insertValues.push(new Date().toISOString());
+  }
+  if (storyColumns.has("category")) {
+    insertColumns.push("category");
+    insertValues.push(category || "General");
+  }
+  const placeholders = insertColumns.map(() => "?").join(", ");
   const insertStmt = await db.prepare(`
-    INSERT INTO stories (title, content, submitter_uuid, is_approved, created_at, category)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).bind(
-    title || null,
-    content,
-    submitter_uuid || null,
-    0,
-    new Date().toISOString(),
-    "General"
-  );
+    INSERT INTO stories (${insertColumns.join(", ")})
+    VALUES (${placeholders})
+  `).bind(...insertValues);
   
   try {
     const res = await insertStmt.run();
@@ -336,6 +375,55 @@ async function handleSubmitStory(request, env) {
   return new Response(JSON.stringify({ success: true }), { status: 200, headers: corsHeaders() });
 }
 __name(handleSubmitStory, "handleSubmitStory");
+
+function getD1Database(env) {
+  if (env.DB && typeof env.DB.prepare === "function") return env.DB;
+  if (env["nameham-db"] && typeof env["nameham-db"].prepare === "function") return env["nameham-db"];
+  for (const value of Object.values(env || {})) {
+    if (value && typeof value.prepare === "function") return value;
+  }
+  if (typeof env.DB === "string") {
+    throw new Error("D1 binding DB is set as a text variable. Configure DB as a Cloudflare D1 binding to nameham-db, not as an environment variable.");
+  }
+  throw new Error("D1 binding DB is not configured. Add a Cloudflare D1 binding named DB for nameham-db.");
+}
+__name(getD1Database, "getD1Database");
+
+function shouldBypassCache(url) {
+  return url.searchParams.has("refresh") || url.searchParams.has("t");
+}
+__name(shouldBypassCache, "shouldBypassCache");
+
+function addInsertValue(columns, values, availableColumns, column, value) {
+  if (!availableColumns.has(column)) return;
+  columns.push(column);
+  values.push(value);
+}
+__name(addInsertValue, "addInsertValue");
+
+async function verifyTurnstileToken(token, env, ip) {
+  if (!env.TURNSTILE_SECRET_KEY) {
+    return { success: false, errorCodes: "missing-secret" };
+  }
+
+  const body = new URLSearchParams({
+    secret: env.TURNSTILE_SECRET_KEY,
+    response: token
+  });
+  if (ip) body.set("remoteip", ip);
+
+  const verifyRes = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+    method: "POST",
+    body,
+    headers: { "Content-Type": "application/x-www-form-urlencoded" }
+  });
+  const verifyData = await verifyRes.json();
+  return {
+    success: Boolean(verifyData.success),
+    errorCodes: Array.isArray(verifyData["error-codes"]) ? verifyData["error-codes"].join(", ") : "unknown"
+  };
+}
+__name(verifyTurnstileToken, "verifyTurnstileToken");
 
 function corsHeaders() {
   return {
@@ -413,27 +501,121 @@ async function getBlockedNamesSet(env) {
   // Try to get from KV cache
   let blockedSet = null;
   try {
-    const cached = await env.CACHE_KV.get(BLOCKED_NAMES_KEY);
-    if (cached) blockedSet = new Set(JSON.parse(cached));
+    if (env.CACHE_KV) {
+      const cached = await env.CACHE_KV.get(BLOCKED_NAMES_KEY);
+      if (cached) blockedSet = new Set(JSON.parse(cached));
+    }
   } catch (e) { console.error("KV blocked names read error:", e); }
   if (blockedSet) return blockedSet;
 
   // Fetch from D1
-  const db = env.DB;
-  const { results } = await db.prepare("SELECT name FROM blocked_names").all();
-  const names = results.map(row => row.name.toLowerCase());
+  const db = getD1Database(env);
+  let results = [];
+  try {
+    ({ results } = await db.prepare("SELECT name FROM blocked_names").all());
+  } catch (err) {
+    console.warn("Blocked names table unavailable; continuing without blocked-name filtering:", err);
+    results = [];
+  }
+  const names = (results || []).map(row => String(row.name || "").toLowerCase()).filter(Boolean);
   blockedSet = new Set(names);
   // Cache for 10 minutes (600 seconds)
   try {
-    await env.CACHE_KV.put(BLOCKED_NAMES_KEY, JSON.stringify(Array.from(blockedSet)), { expirationTtl: 600 });
+    if (env.CACHE_KV) await env.CACHE_KV.put(BLOCKED_NAMES_KEY, JSON.stringify(Array.from(blockedSet)), { expirationTtl: 600 });
   } catch (e) { console.error("KV blocked names write error:", e); }
   return blockedSet;
 }
 __name(getBlockedNamesSet, "getBlockedNamesSet");
 
+async function getTableColumns(db, tableName) {
+  const { results } = await db.prepare(`PRAGMA table_info(${tableName})`).all();
+  return new Set((results || []).map((column) => column.name));
+}
+__name(getTableColumns, "getTableColumns");
+
+async function fetchApprovedStoriesFromD1(env, storyId = null) {
+  const db = getD1Database(env);
+
+  const storyColumns = await getTableColumns(db, "stories");
+  if (!storyColumns.has("content")) {
+    throw new Error("stories table is missing required content column");
+  }
+
+  const idColumn = storyColumns.has("id") ? "id" : "rowid";
+  const createdAtColumn = storyColumns.has("created_at") ? "created_at" : null;
+  const selectColumns = [
+    `${idColumn} AS id`,
+    storyColumns.has("title") ? "title" : "NULL AS title",
+    "content",
+    createdAtColumn ? `${createdAtColumn} AS created_at` : "NULL AS created_at",
+    storyColumns.has("category") ? "category" : "'General' AS category",
+    storyColumns.has("admin_reply") ? "admin_reply" : "'' AS admin_reply"
+  ];
+  const approvalColumn = storyColumns.has("is_approved") ? "is_approved" : (storyColumns.has("approved") ? "approved" : null);
+  const approvalFilter = approvalColumn
+    ? `(${approvalColumn} = 1 OR ${approvalColumn} = true OR lower(CAST(${approvalColumn} AS TEXT)) = 'true')`
+    : "1 = 1";
+  const orderBy = createdAtColumn ? `${createdAtColumn} DESC` : `${idColumn} DESC`;
+
+  const baseSelect = `SELECT ${selectColumns.join(", ")} FROM stories WHERE ${approvalFilter}`;
+  const stmt = storyId
+    ? db.prepare(`${baseSelect} AND ${idColumn} = ? ORDER BY ${orderBy} LIMIT 1`).bind(storyId)
+    : db.prepare(`${baseSelect} ORDER BY ${orderBy}`);
+  const { results } = await stmt.all();
+  return (results || []).map((row) => ({
+    id: row.id,
+    title: row.title,
+    content: row.content,
+    created_at: row.created_at,
+    category: row.category || "General",
+    admin_reply: row.admin_reply || ""
+  }));
+}
+__name(fetchApprovedStoriesFromD1, "fetchApprovedStoriesFromD1");
+
+function parseCategoriesValue(value) {
+  if (Array.isArray(value)) return value.map((item) => String(item || "").trim()).filter(Boolean);
+  const raw = String(value || "").trim();
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return parsed.map((item) => String(item || "").trim()).filter(Boolean);
+    if (typeof parsed === "string") return [parsed.trim()].filter(Boolean);
+  } catch (e) {}
+  if (raw.startsWith("{") && raw.endsWith("}")) {
+    return raw.slice(1, -1).split(",").map((item) => item.trim().replace(/^"|"$/g, "")).filter(Boolean);
+  }
+  return raw.split(",").map((item) => item.trim()).filter(Boolean);
+}
+__name(parseCategoriesValue, "parseCategoriesValue");
+
 async function fetchAllReportsFromD1(env) {
-  const db = env.DB;
-  const { results } = await db.prepare("SELECT id, name, city, state, country, categories, created_at, submitter_uuid FROM reports ORDER BY id DESC").all();
+  const db = getD1Database(env);
+  const reportColumns = await getTableColumns(db, "reports");
+  if (!reportColumns.size) {
+    throw new Error("reports table is missing or has no columns");
+  }
+  if (!reportColumns.has("name")) {
+    throw new Error("reports table is missing required name column");
+  }
+
+  const idColumn = reportColumns.has("id") ? "id" : "rowid";
+  const createdAtColumn = reportColumns.has("created_at") ? "created_at" : (reportColumns.has("createdAt") ? "createdAt" : null);
+  const categoriesExpr = reportColumns.has("categories")
+    ? "categories"
+    : (reportColumns.has("category") ? "category AS categories" : "NULL AS categories");
+  const selectColumns = [
+    `${idColumn} AS id`,
+    "name",
+    reportColumns.has("city") ? "city" : "NULL AS city",
+    reportColumns.has("state") ? "state" : "NULL AS state",
+    reportColumns.has("country") ? "country" : "NULL AS country",
+    categoriesExpr,
+    createdAtColumn ? `${createdAtColumn} AS created_at` : "NULL AS created_at",
+    reportColumns.has("submitter_uuid") ? "submitter_uuid" : "NULL AS submitter_uuid"
+  ];
+  const orderBy = createdAtColumn ? `${createdAtColumn} DESC` : `${idColumn} DESC`;
+  const { results } = await db.prepare(`SELECT ${selectColumns.join(", ")} FROM reports ORDER BY ${orderBy}`).all();
   if (!results || !results.length) return [];
 
   // Fetch blocked names
@@ -442,16 +624,14 @@ async function fetchAllReportsFromD1(env) {
   // Filter reports and parse categories
   const filtered = [];
   for (const row of results) {
-    if (blockedSet.has(row.name.toLowerCase())) continue;
-    let categories = [];
-    try { categories = JSON.parse(row.categories); } catch(e) { categories = []; }
+    if (blockedSet.has(String(row.name || "").toLowerCase())) continue;
     filtered.push({
       id: row.id,
       name: row.name,
       city: row.city,
       state: row.state,
       country: row.country,
-      categories: categories,
+      categories: parseCategoriesValue(row.categories),
       created_at: row.created_at,
       submitter_uuid: row.submitter_uuid
     });
