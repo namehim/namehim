@@ -9,8 +9,8 @@ Community-driven safety awareness platform. Users can anonymously submit reports
 ## Tech stack
 
 - **Frontend:** HTML/CSS/JS (no build step), hosted on Cloudflare Pages
-- **Backend API:** Cloudflare Worker (filters, CAPTCHA, cache, Supabase proxy)
-- **Database:** Supabase (PostgreSQL with Row Level Security)
+- **Backend API:** Cloudflare Worker (filters, Turnstile verification, KV cache, D1 access)
+- **Database:** Cloudflare D1 (with Cloudflare KV for cached report lists)
 - **CAPTCHA:** Cloudflare Turnstile
 - **Maps:** Simplemaps US & World maps (interactive)
 
@@ -30,17 +30,20 @@ Community-driven safety awareness platform. Users can anonymously submit reports
 
 The frontend communicates with a Worker at `https://api.namehim.app/` which provides:
 
-- `GET /filtered-reports` – returns all reports after filtering out blocked names and malicious payloads (cached in Cloudflare KV)
-- `POST /submit` – submits a new safety report (validates Turnstile, inserts into Supabase)
-- `POST /submit-story` – submits a community story (requires approval, not live immediately)
-- - `GET /version` – returns the current Git commit hash and source link, allowing anyone to verify that the live worker matches the public code.
+- `GET /reports` – returns paginated reports from D1 after filtering blocked names (cached in Cloudflare KV)
+- `GET /filtered-reports` – legacy full-list report endpoint for search/filter fallback
+- `GET /stats` – returns state and country report counts for maps
+- `GET /stories` – returns approved community stories from D1
+- `POST /submit` – submits a new safety report (validates Turnstile, inserts into D1)
+- `POST /submit-story` – submits a community story for review (validates Turnstile, inserts into D1)
+- `GET /version` – returns the current Git commit hash and source link, allowing anyone to verify that the live worker matches the public code.
 
-The worker uses environment variables for secrets (SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, TURNSTILE_SECRET_KEY). The source code is open in /worker/index.js and is automatically deployed from this repository via Cloudflare Workers Git integration (branch: main, root directory: worker/).
+The worker uses a D1 binding named `DB`, a KV binding named `CACHE_KV`, and the `TURNSTILE_SECRET_KEY` environment variable. The source code is open in /worker/index.js and is automatically deployed from this repository via Cloudflare Workers Git integration (branch: main, root directory: worker/).
 Every push to main updates the live worker instantly. Secrets remain in Cloudflare environment variables – never committed.
 
 ---
 
-## Database schema (Supabase)
+## Legacy database schema (Supabase)
 
 ### Reports table
 
@@ -79,22 +82,16 @@ CREATE POLICY "View only approved stories" ON public.stories FOR SELECT USING (i
 Blocked names table (optional, used by worker)
 sql
 CREATE TABLE public.blocked_names (name TEXT PRIMARY KEY);
-Environment variables
+Environment variables and bindings
 Frontend (hardcoded in index.html – replace if you fork):
-
-SUPABASE_URL
-
-SUPABASE_ANON_KEY
 
 TURNSTILE_SITE_KEY
 
-Worker (set in Cloudflare Dashboard → Worker → Variables):
-
-SUPABASE_URL
-
-SUPABASE_SERVICE_ROLE_KEY
+Worker (set in Cloudflare Dashboard → Worker → Variables / Bindings):
 
 TURNSTILE_SECRET_KEY
+
+DB (Cloudflare D1 binding)
 
 CACHE_KV (KV namespace binding for caching)
 

@@ -58,10 +58,10 @@ export default {
       let reports;
       if (cached && Array.isArray(cached)) {
         reports = cached;
-        ctx.waitUntil(refreshIfStale(env));
+        if (ctx && typeof ctx.waitUntil === "function") ctx.waitUntil(refreshIfStale(env));
       } else {
         reports = await fetchAllReportsFromD1(env);
-        if (reports && reports.length && env.CACHE_KV) {
+        if (Array.isArray(reports) && env.CACHE_KV) {
           await env.CACHE_KV.put(CACHE_KEY, JSON.stringify(reports));
           await env.CACHE_KV.put(LAST_SUCCESS_KEY, Date.now().toString());
         }
@@ -100,10 +100,10 @@ export default {
       let reports;
       if (cached && Array.isArray(cached)) {
         reports = cached;
-        ctx.waitUntil(refreshIfStale(env));
+        if (ctx && typeof ctx.waitUntil === "function") ctx.waitUntil(refreshIfStale(env));
       } else {
         reports = await fetchAllReportsFromD1(env);
-        if (reports && reports.length && env.CACHE_KV) {
+        if (Array.isArray(reports) && env.CACHE_KV) {
           await env.CACHE_KV.put(CACHE_KEY, JSON.stringify(reports));
           await env.CACHE_KV.put(LAST_SUCCESS_KEY, Date.now().toString());
         }
@@ -133,11 +133,30 @@ export default {
       });
     }
 
+    // GET /stories – approved community stories from D1
+    if (request.method === "GET" && url.pathname === "/stories") {
+      const storyId = url.searchParams.get("id");
+      try {
+        const stories = await fetchApprovedStoriesFromD1(env, storyId);
+        return new Response(JSON.stringify({ stories }), {
+          status: 200,
+          headers: { "Content-Type": "application/json", ...corsHeaders() }
+        });
+      } catch (err) {
+        console.error("Stories fetch failed:", err);
+        return errorResponse("Unable to load stories", 500);
+      }
+    }
+
     if (request.method === "POST" && url.pathname === "/submit") {
       return handleSubmitReport(request, env);
     }
     if (request.method === "POST" && url.pathname === "/submit-story") {
       return handleSubmitStory(request, env);
+    }
+
+    if (request.method !== "GET" || (url.pathname !== "/filtered-reports" && url.pathname !== "/")) {
+      return new Response(JSON.stringify({ error: "Not found" }), { status: 404, headers: corsHeaders() });
     }
 
     // ----- GET /filtered-reports (full list, legacy) -----
@@ -147,7 +166,7 @@ export default {
     } catch (e) { console.error("KV read error:", e); }
 
     if (cached && Array.isArray(cached)) {
-      ctx.waitUntil(refreshIfStale(env));
+      if (ctx && typeof ctx.waitUntil === "function") ctx.waitUntil(refreshIfStale(env));
       const preparedReports = sortAndFilterReports(cached, {
         sortBy: url.searchParams.get("sortBy"),
         sortDirection: url.searchParams.get("sortDirection"),
@@ -165,7 +184,7 @@ export default {
 
     try {
       const reports = await fetchAllReportsFromD1(env);
-      if (reports && reports.length) {
+      if (Array.isArray(reports)) {
         const preparedReports = sortAndFilterReports(reports, {
           sortBy: url.searchParams.get("sortBy"),
           sortDirection: url.searchParams.get("sortDirection"),
@@ -221,26 +240,16 @@ async function handleSubmitReport(request, env) {
   if (blockedSet.has(payload.name.toLowerCase()))
     return errorResponse("The name you entered is not allowed for submission.", 400);
 
-  const token = payload.hcaptchaToken;
+  const token = payload.turnstileToken;
   if (!token) return errorResponse("CAPTCHA token missing", 400);
 
-  const verifyRes = await fetch("https://api.hcaptcha.com/siteverify", {
-    method: "POST",
-    body: new URLSearchParams({
-      secret: env.HCAPTCHA_SECRET,
-      response: token,
-      remoteip: ip || ""
-    }),
-    headers: { "Content-Type": "application/x-www-form-urlencoded" }
-  });
-  const verifyData = await verifyRes.json();
-  if (!verifyData.success) {
-    const errorCodes = Array.isArray(verifyData["error-codes"]) ? verifyData["error-codes"].join(", ") : "unknown";
-    console.error("hCaptcha verify failed (/submit):", errorCodes);
-    return errorResponse(`Invalid CAPTCHA (${errorCodes})`, 400);
+  const verifyResult = await verifyTurnstileToken(token, env, ip);
+  if (!verifyResult.success) {
+    console.error("Turnstile verify failed (/submit):", verifyResult.errorCodes);
+    return errorResponse("Invalid CAPTCHA", 400);
   }
 
-  const { hcaptchaToken, ...reportData } = payload;
+  const { turnstileToken, ...reportData } = payload;
   const db = env.DB;
   const categoriesJson = JSON.stringify(reportData.categories);
   const insertStmt = await db.prepare(`
@@ -292,39 +301,31 @@ async function handleSubmitStory(request, env) {
   let payload;
   try { payload = await request.json(); } catch (err) { return errorResponse("Invalid JSON", 400); }
 
-  const { title, content, submitter_uuid, hcaptchaToken } = payload;
+  const { title, content, category, submitter_uuid, turnstileToken } = payload;
   if (!content || typeof content !== "string") return errorResponse("Missing story content", 400);
   if (content.length > 1000) return errorResponse("Story too long", 400);
-  if (!hcaptchaToken) return errorResponse("CAPTCHA token missing", 400);
+  if (!turnstileToken) return errorResponse("CAPTCHA token missing", 400);
 
-  const verifyRes = await fetch("https://api.hcaptcha.com/siteverify", {
-    method: "POST",
-    body: new URLSearchParams({
-      secret: env.HCAPTCHA_SECRET,
-      response: hcaptchaToken,
-      remoteip: ip || ""
-    }),
-    headers: { "Content-Type": "application/x-www-form-urlencoded" }
-  });
-  const verifyData = await verifyRes.json();
-  if (!verifyData.success) {
-    const errorCodes = Array.isArray(verifyData["error-codes"]) ? verifyData["error-codes"].join(", ") : "unknown";
-    console.error("hCaptcha verify failed (/submit-story):", errorCodes);
-    return errorResponse(`Invalid CAPTCHA (${errorCodes})`, 400);
+  const verifyResult = await verifyTurnstileToken(turnstileToken, env, ip);
+  if (!verifyResult.success) {
+    console.error("Turnstile verify failed (/submit-story):", verifyResult.errorCodes);
+    return errorResponse("Invalid CAPTCHA", 400);
   }
 
   const db = env.DB;
+  if (!db) throw new Error("D1 binding DB is not configured");
+  const storyColumns = await getTableColumns(db, "stories");
+  const insertColumns = ["title", "content", "submitter_uuid", "is_approved", "created_at"];
+  const insertValues = [title || null, content, submitter_uuid || null, 0, new Date().toISOString()];
+  if (storyColumns.has("category")) {
+    insertColumns.push("category");
+    insertValues.push(category || "General");
+  }
+  const placeholders = insertColumns.map(() => "?").join(", ");
   const insertStmt = await db.prepare(`
-    INSERT INTO stories (title, content, submitter_uuid, is_approved, created_at, category)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).bind(
-    title || null,
-    content,
-    submitter_uuid || null,
-    0,
-    new Date().toISOString(),
-    "General"
-  );
+    INSERT INTO stories (${insertColumns.join(", ")})
+    VALUES (${placeholders})
+  `).bind(...insertValues);
   
   try {
     const res = await insertStmt.run();
@@ -336,6 +337,30 @@ async function handleSubmitStory(request, env) {
   return new Response(JSON.stringify({ success: true }), { status: 200, headers: corsHeaders() });
 }
 __name(handleSubmitStory, "handleSubmitStory");
+
+async function verifyTurnstileToken(token, env, ip) {
+  if (!env.TURNSTILE_SECRET_KEY) {
+    return { success: false, errorCodes: "missing-secret" };
+  }
+
+  const body = new URLSearchParams({
+    secret: env.TURNSTILE_SECRET_KEY,
+    response: token
+  });
+  if (ip) body.set("remoteip", ip);
+
+  const verifyRes = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+    method: "POST",
+    body,
+    headers: { "Content-Type": "application/x-www-form-urlencoded" }
+  });
+  const verifyData = await verifyRes.json();
+  return {
+    success: Boolean(verifyData.success),
+    errorCodes: Array.isArray(verifyData["error-codes"]) ? verifyData["error-codes"].join(", ") : "unknown"
+  };
+}
+__name(verifyTurnstileToken, "verifyTurnstileToken");
 
 function corsHeaders() {
   return {
@@ -413,26 +438,61 @@ async function getBlockedNamesSet(env) {
   // Try to get from KV cache
   let blockedSet = null;
   try {
-    const cached = await env.CACHE_KV.get(BLOCKED_NAMES_KEY);
-    if (cached) blockedSet = new Set(JSON.parse(cached));
+    if (env.CACHE_KV) {
+      const cached = await env.CACHE_KV.get(BLOCKED_NAMES_KEY);
+      if (cached) blockedSet = new Set(JSON.parse(cached));
+    }
   } catch (e) { console.error("KV blocked names read error:", e); }
   if (blockedSet) return blockedSet;
 
   // Fetch from D1
   const db = env.DB;
+  if (!db) throw new Error("D1 binding DB is not configured");
   const { results } = await db.prepare("SELECT name FROM blocked_names").all();
-  const names = results.map(row => row.name.toLowerCase());
+  const names = (results || []).map(row => String(row.name || "").toLowerCase()).filter(Boolean);
   blockedSet = new Set(names);
   // Cache for 10 minutes (600 seconds)
   try {
-    await env.CACHE_KV.put(BLOCKED_NAMES_KEY, JSON.stringify(Array.from(blockedSet)), { expirationTtl: 600 });
+    if (env.CACHE_KV) await env.CACHE_KV.put(BLOCKED_NAMES_KEY, JSON.stringify(Array.from(blockedSet)), { expirationTtl: 600 });
   } catch (e) { console.error("KV blocked names write error:", e); }
   return blockedSet;
 }
 __name(getBlockedNamesSet, "getBlockedNamesSet");
 
+async function getTableColumns(db, tableName) {
+  const { results } = await db.prepare(`PRAGMA table_info(${tableName})`).all();
+  return new Set((results || []).map((column) => column.name));
+}
+__name(getTableColumns, "getTableColumns");
+
+async function fetchApprovedStoriesFromD1(env, storyId = null) {
+  const db = env.DB;
+  if (!db) throw new Error("D1 binding DB is not configured");
+
+  const storyColumns = await getTableColumns(db, "stories");
+  const selectColumns = ["id", "title", "content", "created_at"];
+  if (storyColumns.has("category")) selectColumns.push("category");
+  if (storyColumns.has("admin_reply")) selectColumns.push("admin_reply");
+
+  const baseSelect = `SELECT ${selectColumns.join(", ")} FROM stories WHERE is_approved = 1`;
+  const stmt = storyId
+    ? db.prepare(`${baseSelect} AND id = ? ORDER BY created_at DESC LIMIT 1`).bind(storyId)
+    : db.prepare(`${baseSelect} ORDER BY created_at DESC`);
+  const { results } = await stmt.all();
+  return (results || []).map((row) => ({
+    id: row.id,
+    title: row.title,
+    content: row.content,
+    created_at: row.created_at,
+    category: row.category || "General",
+    admin_reply: row.admin_reply || ""
+  }));
+}
+__name(fetchApprovedStoriesFromD1, "fetchApprovedStoriesFromD1");
+
 async function fetchAllReportsFromD1(env) {
   const db = env.DB;
+  if (!db) throw new Error("D1 binding DB is not configured");
   const { results } = await db.prepare("SELECT id, name, city, state, country, categories, created_at, submitter_uuid FROM reports ORDER BY id DESC").all();
   if (!results || !results.length) return [];
 
@@ -442,7 +502,7 @@ async function fetchAllReportsFromD1(env) {
   // Filter reports and parse categories
   const filtered = [];
   for (const row of results) {
-    if (blockedSet.has(row.name.toLowerCase())) continue;
+    if (blockedSet.has(String(row.name || "").toLowerCase())) continue;
     let categories = [];
     try { categories = JSON.parse(row.categories); } catch(e) { categories = []; }
     filtered.push({
