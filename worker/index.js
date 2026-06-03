@@ -140,8 +140,8 @@ export default {
     if (request.method === "GET" && url.pathname === "/stories") {
       const storyId = url.searchParams.get("id");
       try {
-        const { stories, approvedCount } = await fetchApprovedStoriesFromD1(env, storyId);
-        return new Response(JSON.stringify({ stories, approvedCount, total: approvedCount }), {
+        const stories = await fetchApprovedStoriesFromD1(env, storyId);
+        return new Response(JSON.stringify({ stories }), {
           status: 200,
           headers: { "Content-Type": "application/json", ...corsHeaders() }
         });
@@ -558,15 +558,11 @@ async function fetchApprovedStoriesFromD1(env, storyId = null) {
   const orderBy = createdAtColumn ? `${createdAtColumn} DESC` : `${idColumn} DESC`;
 
   const baseSelect = `SELECT ${selectColumns.join(", ")} FROM stories WHERE ${approvalFilter}`;
-  const countStmt = db.prepare(`SELECT COUNT(*) AS approved_count FROM stories WHERE ${approvalFilter}`);
-  const countRow = await countStmt.first();
-  const approvedCount = Number(countRow && countRow.approved_count) || 0;
-
   const stmt = storyId
     ? db.prepare(`${baseSelect} AND ${idColumn} = ? ORDER BY ${orderBy} LIMIT 1`).bind(storyId)
     : db.prepare(`${baseSelect} ORDER BY ${orderBy}`);
   const { results } = await stmt.all();
-  const stories = (results || []).map((row) => ({
+  return (results || []).map((row) => ({
     id: row.id,
     title: row.title,
     content: row.content,
@@ -574,7 +570,6 @@ async function fetchApprovedStoriesFromD1(env, storyId = null) {
     category: row.category || "General",
     admin_reply: row.admin_reply || ""
   }));
-  return { stories, approvedCount };
 }
 __name(fetchApprovedStoriesFromD1, "fetchApprovedStoriesFromD1");
 
