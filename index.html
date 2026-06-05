@@ -1890,7 +1890,7 @@ async function filterReportsByState(stateFullName) {
       setBrowseTitleForSingleReport(null);
     }
 
-    function updateBrowseViewFromRoute(options = {}) {
+    async function updateBrowseViewFromRoute(options = {}) {
       const preserveBrowsePage = Boolean(options.preserveBrowsePage);
       const route = getCurrentRoute();
       if (route !== '#/browse') {
@@ -1905,15 +1905,31 @@ async function filterReportsByState(stateFullName) {
         activeSingleReportId = null;
         setSingleReportControlsVisible(false);
         setBrowseTitleForSingleReport(null);
-        applySearchFilter({ preservePage: preserveBrowsePage });
+        await applySearchFilter({ preservePage: preserveBrowsePage });
         return;
       }
 
-      if (!hasLoadedReports) {
+      activeSingleReportId = reportId;
+      setSingleReportControlsVisible(true);
+      browseMessage.textContent = 'Loading shared report...';
+      browseMessage.className = 'message';
+
+      const loaded = await ensureFullListLoaded();
+      if (!loaded) {
         return;
       }
 
-      const matched = allReports.find((report) => String(report.id) === reportId);
+      if (getCurrentRoute() !== '#/browse' || getReportIdFromUrl() !== reportId) {
+        return;
+      }
+
+      allReports = fullReportsList;
+      window.allReports = allReports;
+      allTotalCount = fullReportsList.length;
+      hasLoadedReports = true;
+      updateReportCount(allTotalCount);
+
+      const matched = fullReportsList.find((report) => String(report.id) === reportId);
       if (matched) {
         showSingleReport(matched);
       } else {
