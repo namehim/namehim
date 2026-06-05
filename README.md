@@ -6,6 +6,8 @@ Community-driven safety awareness platform. Users can anonymously submit reports
 
 **Live site:** [https://namehim.app](https://namehim.app)
 
+## To request removal of your name please contact site email on the about page of the site.
+
 ---
 
 ## Tech stack
