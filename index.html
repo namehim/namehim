@@ -2093,23 +2093,46 @@ function addStoryTimestamp() {
       loadingDotIndex = 0;
     }
 
-    function formatTimestamp(timestamp) {
-      if (!timestamp) {
-        return '';
+    function normalizeTimestampForDisplay(timestamp) {
+      if (timestamp === null || timestamp === undefined || timestamp === '') {
+        return null;
+      }
+
+      if (typeof timestamp === 'number' && Number.isFinite(timestamp)) {
+        return new Date(timestamp < 100000000000 ? timestamp * 1000 : timestamp);
       }
 
       const timestampValue = String(timestamp).trim();
       if (!timestampValue) {
-        return '';
+        return null;
       }
 
-      const hasTimezoneInfo = /([zZ]|[+-]\d{2}:?\d{2})$/.test(timestampValue);
-      const normalizedTimestamp = hasTimezoneInfo
-        ? timestampValue
-        : timestampValue.replace(' ', 'T') + 'Z';
+      if (/^\d+$/.test(timestampValue)) {
+        const numericTimestamp = Number(timestampValue);
+        if (Number.isFinite(numericTimestamp)) {
+          return new Date(numericTimestamp < 100000000000 ? numericTimestamp * 1000 : numericTimestamp);
+        }
+      }
 
-      const date = new Date(normalizedTimestamp);
-      if (Number.isNaN(date.getTime())) {
+      let normalizedTimestamp = timestampValue
+        .replace(/^(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})/, '$1T$2')
+        .replace(/\s+(UTC|GMT)$/i, 'Z')
+        .replace(/(\.\d{3})\d+/, '$1');
+
+      normalizedTimestamp = normalizedTimestamp.replace(/([+-]\d{2})(\d{2})$/, '$1:$2');
+      normalizedTimestamp = normalizedTimestamp.replace(/([+-]\d{2})$/, '$1:00');
+
+      const hasTimezoneInfo = /([zZ]|[+-]\d{2}:\d{2})$/.test(normalizedTimestamp);
+      if (!hasTimezoneInfo) {
+        normalizedTimestamp += 'Z';
+      }
+
+      return new Date(normalizedTimestamp);
+    }
+
+    function formatTimestamp(timestamp) {
+      const date = normalizeTimestampForDisplay(timestamp);
+      if (!date || Number.isNaN(date.getTime())) {
         return '';
       }
 
@@ -2128,12 +2151,10 @@ function addStoryTimestamp() {
     function formatCommunityPostTimestamp(timestamp) {
       const formattedTimestamp = formatTimestamp(timestamp);
       if (!formattedTimestamp) {
-        return 'Unknown date/time (PDT)';
+        return 'Unknown date/time';
       }
 
-      return formattedTimestamp.includes('PDT')
-        ? formattedTimestamp
-        : `${formattedTimestamp} PDT`;
+      return formattedTimestamp;
     }
 
     function hasInvalidLettersOnlyChars(value) {

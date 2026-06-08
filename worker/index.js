@@ -527,13 +527,29 @@ async function writeStoriesCache(env, stories) {
 }
 __name(writeStoriesCache, "writeStoriesCache");
 
+function normalizeCachedStories(stories) {
+  if (!Array.isArray(stories)) return null;
+  return stories.map((story) => ({
+    ...story,
+    created_at: story?.created_at || story?.createdAt || ""
+  }));
+}
+__name(normalizeCachedStories, "normalizeCachedStories");
+
+function storiesCacheHasCreatedTimestamps(stories) {
+  if (!Array.isArray(stories)) return false;
+  return stories.length === 0 || stories.every((story) => Boolean(story?.created_at || story?.createdAt));
+}
+__name(storiesCacheHasCreatedTimestamps, "storiesCacheHasCreatedTimestamps");
+
 async function getStoriesForRead(env, ctx, options = {}) {
   const bypassCache = Boolean(options.bypassCache);
   const cached = await readCachedStories(env);
+  const normalizedCached = normalizeCachedStories(cached);
 
-  if (cached && !bypassCache) {
+  if (cached && !bypassCache && storiesCacheHasCreatedTimestamps(cached)) {
     if (ctx && typeof ctx.waitUntil === "function") ctx.waitUntil(refreshStoriesIfStale(env));
-    return cached;
+    return normalizedCached;
   }
 
   try {
@@ -546,9 +562,9 @@ async function getStoriesForRead(env, ctx, options = {}) {
     console.error("D1 stories fetch failed:", err);
   }
 
-  if (cached) {
+  if (normalizedCached) {
     console.warn("Serving stale stories cache after D1 fetch failure.");
-    return cached;
+    return normalizedCached;
   }
 
   return null;
