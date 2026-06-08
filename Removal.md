@@ -6,7 +6,7 @@ If you believe your personal information has been posted on NameHim without your
 
 ## How to request removal
 
-1. **Send an email** to `moderation@namehim.app` with the subject line “Removal Request”.
+1. **Send an email** to namehim.app@proton.me with the subject line “Removal Request”.
 2. **Include the following information**:
    - Your name.
    - The exact text or URL of the report(s) you want removed.
