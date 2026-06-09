@@ -6,7 +6,7 @@ Community-driven safety awareness platform. Users can anonymously submit reports
 
 **Live site:** [https://namehim.app](https://namehim.app)
 
-## To request removal of a name from the site please refer to the process outlined in the Removal.md file on this repo here: https://github.com/namehim/namehim/blob/8c662054d65338dae9143ec9bacbd2ea742a80aa/Removal.md 
+## To request removal of a name from the site please refer to the process outlined in the Removal.md file on this repo here: (https://github.com/namehim/namehim/blob/main/Removal.md) 
 
 ---
 
