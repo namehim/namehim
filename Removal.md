@@ -30,4 +30,4 @@ If you are the original poster and you believe your report was removed in error:
 
 This removal process is part of our good‑faith moderation. It does not mean we officially investigate every report, nor does it change the site’s disclaimer that all content is user‑generated and unverified. We simply provide a fair way for individuals to raise concerns about content on the site.
 
-**Contact:** `moderation@namehim.app`
+**Contact:** `namehim.app@proton.me`
