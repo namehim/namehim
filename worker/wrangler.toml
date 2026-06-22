@@ -11,3 +11,13 @@ name = "RATELIMITER"
 type = "ratelimit"
 namespace_id = "1001"
 simple = { limit = 3, period = 60 }
+
+
+# D1 database binding required by worker/index.js (env.DB).
+# Keep this binding in source control so Cloudflare's Git deployments do not
+# replace the dashboard binding on every push. In the Cloudflare dashboard this
+# is the D1 binding named DB with value namehim-db.
+[[d1_databases]]
+binding = "DB"
+database_name = "namehim-db"
+database_id = "namehim-db"
