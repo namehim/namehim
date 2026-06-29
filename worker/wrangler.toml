@@ -20,4 +20,4 @@ simple = { limit = 3, period = 60 }
 [[d1_databases]]
 binding = "DB"
 database_name = "namehim-db"
-database_id = "namehim-db"
+database_id = "4f4b8478-af49-4228-bad8-009de8295d51"
